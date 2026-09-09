@@ -37,7 +37,6 @@ public final class PUBGGame {
     public float matchTimer = 0f;
     public int aliveCount = 100;
 
-    // Отрисовка экранов победы и поражения
     private final Paint pPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rect = new RectF();
 
@@ -48,7 +47,7 @@ public final class PUBGGame {
 
     public void startMatchmaking() {
         state = STATE_MATCHING;
-        matchingTimer = 3.0f; // 3 секунды симуляции подбора 100 игроков
+        matchingTimer = 3.0f;
     }
 
     public void launchMatch() {
@@ -69,7 +68,6 @@ public final class PUBGGame {
         aliveCount = 100;
         matchTimer = 0;
 
-        // Создание 15 ботов в самолете
         for (int i = 0; i < 15; i++) {
             float dropX = (float) ((Math.random() - 0.5) * 200);
             float dropZ = (float) ((Math.random() - 0.5) * 200);
@@ -99,13 +97,11 @@ public final class PUBGGame {
                     touchHUD.vehicleThrottle, touchHUD.vehicleSteer, touchHUD.vehicleHandbrake);
         }
 
-        // Стрельба игрока
         if (touchHUD.isShooting() && player.moveMode == PUBGPlayer.MODE_ON_FOOT) {
             handleShooting();
         }
 
-        // Обновление ботов
-        int alive = 1; // игрок
+        int alive = 1;
         for (PUBGBot bot : bots) {
             bot.update(dt, map, player, bots, particles);
             if (!bot.isDead) alive++;
@@ -114,7 +110,6 @@ public final class PUBGGame {
 
         particles.update(dt, null);
 
-        // Проверка победы / поражения
         if (player.isDead) {
             state = STATE_DEFEAT;
         } else if (aliveCount == 1 && player.moveMode == PUBGPlayer.MODE_ON_FOOT && matchTimer > 20f) {
@@ -133,7 +128,14 @@ public final class PUBGGame {
         player.recoilPitch += wep.recoilPitch * 0.7f;
         player.recoilYaw += (float) ((Math.random() - 0.5) * wep.recoilYaw);
 
-        SoundSynth3D.play2D(SoundSynth3D.SOUND_AKR, 1.0f);
+        int soundId = SoundSynth3D.SOUND_M416;
+        if (wep.id == Weapon.ID_AKR) soundId = SoundSynth3D.SOUND_AKM;
+        else if (wep.id == Weapon.ID_AWM) soundId = SoundSynth3D.SOUND_AWM;
+        else if (wep.id == Weapon.ID_SHOTGUN) soundId = SoundSynth3D.SOUND_SHOTGUN;
+        else if (wep.id == Weapon.ID_DEAGLE) soundId = SoundSynth3D.SOUND_DEAGLE;
+        else if (wep.id == Weapon.ID_KNIFE) soundId = SoundSynth3D.SOUND_PAN;
+
+        SoundSynth3D.play2D(soundId, 1.0f);
 
         float radYaw = (player.yaw + player.recoilYaw) * Math3D.TO_RAD;
         float radPitch = (player.pitch + player.recoilPitch) * Math3D.TO_RAD;
@@ -177,8 +179,8 @@ public final class PUBGGame {
             float dmg = hitHead ? wep.damage * 3.5f : wep.damage;
             hitBot.takeDamage(dmg, null, player);
             particles.spawnBlood(endX, endY, endZ, hitHead ? 15 : 8);
-            if (hitHead) SoundSynth3D.play2D(SoundSynth3D.SOUND_HEADSHOT, 1.0f);
-            else SoundSynth3D.play2D(SoundSynth3D.SOUND_HIT, 0.7f);
+            if (hitHead) SoundSynth3D.play2D(SoundSynth3D.SOUND_HEADSHOT_HELMET, 1.0f);
+            else SoundSynth3D.play2D(SoundSynth3D.SOUND_BODY_HIT, 0.8f);
         } else {
             particles.spawnSparks(endX, endY, endZ, 4);
         }
@@ -217,7 +219,6 @@ public final class PUBGGame {
         pPaint.setTextSize(24);
         c.drawText("KILLS: " + player.kills + "   |   RATING: +38 RANK PTS", cx - 180, h * 0.52f, pPaint);
 
-        // Кнопка ПРОДОЛЖИТЬ
         pPaint.setColor(0xFFFFB300);
         rect.set(cx - 150, h * 0.65f, cx + 150, h * 0.65f + 65);
         c.drawRoundRect(rect, 8, 8, pPaint);

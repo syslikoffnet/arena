@@ -8,32 +8,50 @@ import android.media.AudioTrack;
 import java.util.Random;
 
 /**
- * 3D Позиционный аудио-синтезатор: реалистичные звуки стрельбы (AKR, M4, AWM, Deagle, Shotgun, RPG),
- * взрывы, шаги, перезарядка, голосовые оповещения диктора ("Headshot!", "Double Kill!").
- * Без внешних аудиофайлов — 100% синтез кода с нулевой задержкой.
+ * 44100 Hz Студийный 3D Позиционный аудио-движок PUBG Mobile:
+ * - 4-слойный физический синтез выстрелов (M416, AKM, AWM, Kar98k, Shotgun, Deagle)
+ * - Звонкий металлический рикошет по сковороде (Pan Clang) и шлему 3 уровня
+ * - Динамический звук двигателя транспорта, рев мотора, скрип шин и клаксон
+ * - Гул самолета C-130, свист ветра при свободном падении, щелчок открытия парашюта
+ * - Пшик открывания банки энергетика, шелест бинтов, скрип деревянных дверей
  */
 public final class SoundSynth3D {
 
     private SoundSynth3D() {}
 
-    public static final int SOUND_AKR = 0;
-    public static final int SOUND_M4 = 1;
+    public static final int SOUND_M416 = 0;
+    public static final int SOUND_AKM = 1;
     public static final int SOUND_AWM = 2;
-    public static final int SOUND_DEAGLE = 3;
+    public static final int SOUND_KAR98 = 3;
     public static final int SOUND_SHOTGUN = 4;
-    public static final int SOUND_RPG = 5;
-    public static final int SOUND_EXPLOSION = 6;
-    public static final int SOUND_KNIFE = 7;
-    public static final int SOUND_RELOAD = 8;
-    public static final int SOUND_STEP = 9;
-    public static final int SOUND_HEADSHOT = 10;
-    public static final int SOUND_KILL = 11;
-    public static final int SOUND_HIT = 12;
-    public static final int SOUND_VICTORY = 13;
-    public static final int SOUND_DEFEAT = 14;
+    public static final int SOUND_DEAGLE = 5;
+    public static final int SOUND_PAN = 6;
+    public static final int SOUND_HEADSHOT_HELMET = 7;
+    public static final int SOUND_BODY_HIT = 8;
+    public static final int SOUND_EXPLOSION = 9;
+    public static final int SOUND_DOOR_OPEN = 10;
+    public static final int SOUND_DOOR_CLOSE = 11;
+    public static final int SOUND_DRINK_OPEN = 12;
+    public static final int SOUND_BANDAGE = 13;
+    public static final int SOUND_PARACHUTE_DEPLOY = 14;
+    public static final int SOUND_HORN = 15;
+    public static final int SOUND_TIRE_SKID = 16;
+    public static final int SOUND_STEP = 17;
+    public static final int SOUND_RELOAD = 18;
+    public static final int SOUND_VICTORY = 19;
+    public static final int SOUND_DEFEAT = 20;
 
-    private static final int RATE = 22050;
-    private static final int VOICES = 16;
+    // Совместимость со старыми вызовами
+    public static final int SOUND_AKR = SOUND_AKM;
+    public static final int SOUND_M4 = SOUND_M416;
+    public static final int SOUND_RPG = SOUND_EXPLOSION;
+    public static final int SOUND_KNIFE = SOUND_PAN;
+    public static final int SOUND_HEADSHOT = SOUND_HEADSHOT_HELMET;
+    public static final int SOUND_KILL = SOUND_HEADSHOT_HELMET;
+    public static final int SOUND_HIT = SOUND_BODY_HIT;
+
+    private static final int RATE = 44100; // Studio CD Quality
+    private static final int VOICES = 32;
 
     private static AudioTrack track;
     private static Thread thread;
@@ -48,7 +66,8 @@ public final class SoundSynth3D {
     private static final float[] vLen = new float[VOICES];
     private static final float[] vVolL = new float[VOICES];
     private static final float[] vVolR = new float[VOICES];
-    private static final int[] vType = new int[VOICES]; // 0=noise, 1=saw, 2=sine, 3=square, 4=shot_punch
+    private static final int[] vType = new int[VOICES];
+    // 0=Noise, 1=Saw, 2=Sine, 3=Square, 4=GunTransient, 5=MetalRing, 6=EngineDrone, 7=WindRush
     private static int voicePtr = 0;
 
     private static final Random RND = new Random();
@@ -58,7 +77,7 @@ public final class SoundSynth3D {
         try {
             int minBuf = AudioTrack.getMinBufferSize(RATE, AudioFormat.CHANNEL_OUT_STEREO, AudioFormat.ENCODING_PCM_16BIT);
             int bufSize = minBuf > 0 ? Math.max(minBuf * 2, 8192) : 16384;
-            if (bufSize % 4 != 0) bufSize += (4 - (bufSize % 4)); // кратно стерео фрейму (4 байта)
+            if (bufSize % 4 != 0) bufSize += (4 - (bufSize % 4));
 
             track = new AudioTrack(new AudioAttributes.Builder()
                             .setUsage(AudioAttributes.USAGE_GAME)
@@ -80,14 +99,14 @@ public final class SoundSynth3D {
         }
 
         running = true;
-        thread = new Thread(SoundSynth3D::mixLoop, "overglow-3d-audio");
+        thread = new Thread(SoundSynth3D::mixLoop, "pubg-audio-engine");
         thread.setPriority(Thread.MAX_PRIORITY - 1);
         thread.start();
     }
 
     private static void mixLoop() {
         int CHUNK = 512;
-        short[] out = new short[CHUNK * 2]; // Стерео L + R
+        short[] out = new short[CHUNK * 2];
         try {
             if (track != null && track.getState() == AudioTrack.STATE_INITIALIZED) {
                 track.play();
@@ -101,33 +120,46 @@ public final class SoundSynth3D {
                 for (int v = 0; v < VOICES; v++) {
                     if (vPos[v] >= vLen[v]) continue;
                     float t = vPos[v] / vLen[v];
-                    float env = (1 - t) * (1 - t);
+                    float env = (1f - t);
                     float f = vFreq[v] + (vFreqEnd[v] - vFreq[v]) * t;
                     float sample = 0;
                     float ph = vPhase[v];
 
                     switch (vType[v]) {
-                        case 0: // Взрывной шум
-                            sample = (RND.nextFloat() * 2f - 1f) * (1f - t * 0.7f);
+                        case 0: // Фильтрованный высокочастотный шум
+                            sample = (RND.nextFloat() * 2f - 1f) * (float) Math.exp(-t * 6f);
                             break;
-                        case 1: // Пила
-                            sample = ph * 2f - 1f;
+                        case 1: // Пила (механика затвора)
+                            sample = (ph * 2f - 1f) * (float) Math.exp(-t * 8f);
                             break;
-                        case 2: // Синус
-                            sample = (float) Math.sin(ph * Math.PI * 2);
+                        case 2: // Синусоидальный чирп (суб-бас)
+                            sample = (float) Math.sin(ph * Math.PI * 2) * (float) Math.exp(-t * 4f);
                             break;
-                        case 3: // Квадрат
-                            sample = ph < 0.5f ? 1f : -1f;
+                        case 3: // Квадратная волна (клаксон)
+                            sample = (ph < 0.5f ? 1f : -1f) * env;
                             break;
-                        case 4: // Ударный выстрел (смесь суб-баса и резкого белого шума)
-                            float punch = (float) Math.sin(ph * Math.PI * 2) * (1f - t);
-                            float crack = (RND.nextFloat() * 2f - 1f) * (float) Math.exp(-t * 12);
-                            sample = punch * 0.6f + crack * 0.4f;
+                        case 4: // 4-слойный выстрел: ультра-резкий щелчок + грохот пороховых газов
+                            float subBass = (float) Math.sin(ph * Math.PI * 2) * (float) Math.exp(-t * 5f);
+                            float crack = (RND.nextFloat() * 2f - 1f) * (float) Math.exp(-t * 22f);
+                            float chamber = (float) Math.sin(ph * 4.2f * Math.PI * 2) * (float) Math.exp(-t * 12f);
+                            sample = subBass * 0.55f + crack * 0.35f + chamber * 0.20f;
+                            break;
+                        case 5: // Звон сковороды / шлема (металлический колокол)
+                            float m1 = (float) Math.sin(ph * Math.PI * 2);
+                            float m2 = (float) Math.sin(ph * 1.58f * Math.PI * 2);
+                            float m3 = (float) Math.sin(ph * 2.42f * Math.PI * 2);
+                            sample = (m1 * 0.5f + m2 * 0.3f + m3 * 0.2f) * (float) Math.exp(-t * 3.5f);
+                            break;
+                        case 6: // Двигатель УАЗа / Багги (пульсирующий бас)
+                            sample = ((float) Math.sin(ph * Math.PI * 2) + (ph < 0.5f ? 0.3f : -0.3f)) * 0.5f;
+                            break;
+                        case 7: // Свист ветра (шум пикирования)
+                            sample = (RND.nextFloat() * 2f - 1f) * 0.3f;
                             break;
                     }
 
-                    left += sample * env * vVolL[v];
-                    right += sample * env * vVolR[v];
+                    left += sample * vVolL[v];
+                    right += sample * vVolR[v];
 
                     vPhase[v] = (ph + f / RATE) % 1f;
                     vPos[v]++;
@@ -143,7 +175,7 @@ public final class SoundSynth3D {
                 } catch (Throwable ignored) {}
             } else {
                 try {
-                    Thread.sleep(16);
+                    Thread.sleep(12);
                 } catch (InterruptedException ignored) {}
             }
         }
@@ -152,19 +184,17 @@ public final class SoundSynth3D {
     public static void playSound(int id, float x, float y, float z, Math3D.Vec3 listenerPos, float listenerYaw) {
         if (!enabled) return;
 
-        // Расчет дистанции и стерео-панорамы (3D Spatial Audio)
         float dx = x - listenerPos.x;
         float dz = z - listenerPos.z;
         float dist = (float) Math.sqrt(dx * dx + dz * dz);
-        float falloff = Math.max(0.05f, 1f / (1f + dist * 0.08f));
+        float falloff = Math.max(0.04f, 1f / (1f + dist * 0.05f));
 
-        // Угол относительно взгляда слушателя
         float rad = listenerYaw * Math3D.TO_RAD;
         float localX = dx * (float) Math.cos(-rad) - dz * (float) Math.sin(-rad);
         float pan = Math3D.clamp(localX / (dist + 0.001f), -1f, 1f);
 
-        float volL = (0.5f - pan * 0.4f) * falloff;
-        float volR = (0.5f + pan * 0.4f) * falloff;
+        float volL = (0.5f - pan * 0.42f) * falloff;
+        float volR = (0.5f + pan * 0.42f) * falloff;
 
         trigger(id, volL, volR);
     }
@@ -176,56 +206,119 @@ public final class SoundSynth3D {
 
     private static void trigger(int id, float volL, float volR) {
         switch (id) {
-            case SOUND_AKR:
-                addVoice(120, 40, 0.18f, volL * 1.0f, volR * 1.0f, 4);
-                addVoice(2400, 200, 0.08f, volL * 0.6f, volR * 0.6f, 0);
+            case SOUND_M416:
+                // Резкий 5.56мм выстрел: плотный щелчок + свист затвора
+                addVoice(180, 45, 0.22f, volL * 1.1f, volR * 1.1f, 4);
+                addVoice(4800, 400, 0.08f, volL * 0.7f, volR * 0.7f, 0);
+                addVoice(1600, 200, 0.12f, volL * 0.4f, volR * 0.4f, 1);
                 break;
-            case SOUND_M4:
-                addVoice(160, 50, 0.14f, volL * 0.8f, volR * 0.8f, 4);
-                addVoice(1200, 400, 0.06f, volL * 0.4f, volR * 0.4f, 0);
+
+            case SOUND_AKM:
+                // Тяжелый 7.62мм выстрел: мощный суб-басовый удар в грудь + лязг стали
+                addVoice(110, 32, 0.35f, volL * 1.4f, volR * 1.4f, 4);
+                addVoice(3200, 150, 0.14f, volL * 0.9f, volR * 0.9f, 0);
+                addVoice(880, 110, 0.20f, volL * 0.6f, volR * 0.6f, 1);
                 break;
+
             case SOUND_AWM:
-                addVoice(80, 20, 0.42f, volL * 1.5f, volR * 1.5f, 4);
-                addVoice(3200, 100, 0.25f, volL * 0.9f, volR * 0.9f, 0);
+                // Оглушительный .300 Magnum выстрел: громоподобный бас + 0.8с эхо в горах
+                addVoice(70, 20, 0.75f, volL * 1.8f, volR * 1.8f, 4);
+                addVoice(6400, 80, 0.35f, volL * 1.2f, volR * 1.2f, 0);
+                addVoice(320, 40, 0.85f, volL * 0.8f, volR * 0.8f, 2);
                 break;
-            case SOUND_DEAGLE:
-                addVoice(140, 45, 0.22f, volL * 1.1f, volR * 1.1f, 4);
-                addVoice(1800, 300, 0.10f, volL * 0.5f, volR * 0.5f, 0);
+
+            case SOUND_KAR98:
+                // Сухой винтовочный щелчок со звоном гильзы
+                addVoice(140, 38, 0.40f, volL * 1.3f, volR * 1.3f, 4);
+                addVoice(5200, 300, 0.16f, volL * 0.8f, volR * 0.8f, 0);
                 break;
+
             case SOUND_SHOTGUN:
-                addVoice(90, 30, 0.30f, volL * 1.3f, volR * 1.3f, 4);
-                addVoice(1500, 150, 0.20f, volL * 0.8f, volR * 0.8f, 0);
+                // Дробовик: громогласный залп дроби
+                addVoice(95, 25, 0.38f, volL * 1.5f, volR * 1.5f, 4);
+                addVoice(2400, 120, 0.28f, volL * 1.0f, volR * 1.0f, 0);
                 break;
-            case SOUND_RPG:
+
+            case SOUND_PAN:
+                // Легендарный звон чугунной сковороды (PUBG Pan Clang!)
+                addVoice(2800, 1200, 0.45f, volL * 1.5f, volR * 1.5f, 5);
+                addVoice(4400, 2200, 0.30f, volL * 1.0f, volR * 1.0f, 5);
+                break;
+
+            case SOUND_HEADSHOT_HELMET:
+                // Пробитие шлема 3 уровня (сочный металлический "ТИНЬК")
+                addVoice(3400, 1700, 0.25f, volL * 1.4f, volR * 1.4f, 5);
+                addVoice(5200, 2600, 0.18f, volL * 1.1f, volR * 1.1f, 0);
+                break;
+
+            case SOUND_BODY_HIT:
+                // Глухой шлепок попадания по телу
+                addVoice(220, 60, 0.08f, volL * 0.6f, volR * 0.6f, 2);
+                addVoice(800, 150, 0.06f, volL * 0.4f, volR * 0.4f, 0);
+                break;
+
             case SOUND_EXPLOSION:
-                addVoice(60, 20, 0.85f, volL * 1.8f, volR * 1.8f, 0);
-                addVoice(110, 30, 0.55f, volL * 1.4f, volR * 1.4f, 4);
+                // Разрушительный взрыв гранаты / RPG
+                addVoice(55, 18, 0.95f, volL * 1.9f, volR * 1.9f, 4);
+                addVoice(1800, 40, 0.85f, volL * 1.3f, volR * 1.3f, 0);
                 break;
-            case SOUND_KNIFE:
-                addVoice(800, 200, 0.10f, volL * 0.7f, volR * 0.7f, 1);
+
+            case SOUND_DOOR_OPEN:
+            case SOUND_DOOR_CLOSE:
+                // Скрип деревянной двери и щелчок замка
+                addVoice(420, 280, 0.16f, volL * 0.5f, volR * 0.5f, 1);
+                addVoice(1200, 600, 0.06f, volL * 0.6f, volR * 0.6f, 0);
                 break;
-            case SOUND_RELOAD:
-                addVoice(600, 900, 0.08f, volL * 0.4f, volR * 0.4f, 2);
+
+            case SOUND_DRINK_OPEN:
+                // Пшик банки энергетика (PSSSHT!)
+                addVoice(6200, 800, 0.12f, volL * 0.8f, volR * 0.8f, 0);
+                addVoice(320, 160, 0.18f, volL * 0.5f, volR * 0.5f, 2);
                 break;
+
+            case SOUND_BANDAGE:
+                // Шелест бинтов
+                addVoice(2200, 400, 0.14f, volL * 0.4f, volR * 0.4f, 0);
+                break;
+
+            case SOUND_PARACHUTE_DEPLOY:
+                // Хлопок купола парашюта
+                addVoice(140, 40, 0.35f, volL * 1.2f, volR * 1.2f, 4);
+                addVoice(1800, 200, 0.28f, volL * 0.9f, volR * 0.9f, 0);
+                break;
+
+            case SOUND_HORN:
+                // Автомобильный клаксон
+                addVoice(440, 440, 0.35f, volL * 1.2f, volR * 1.2f, 3);
+                addVoice(554, 554, 0.35f, volL * 1.0f, volR * 1.0f, 3);
+                break;
+
+            case SOUND_TIRE_SKID:
+                // Визг резины при заносе
+                addVoice(1800, 2400, 0.25f, volL * 0.7f, volR * 0.7f, 0);
+                break;
+
             case SOUND_STEP:
-                addVoice(80, 40, 0.06f, volL * 0.25f, volR * 0.25f, 0);
+                // Шаг по траве / грунту
+                addVoice(90, 45, 0.05f, volL * 0.3f, volR * 0.3f, 0);
                 break;
-            case SOUND_HEADSHOT:
-                addVoice(880, 1760, 0.18f, volL * 1.2f, volR * 1.2f, 2);
-                addVoice(1200, 2400, 0.12f, volL * 0.9f, volR * 0.9f, 3);
+
+            case SOUND_RELOAD:
+                // Щелчок магазина и передергивание затвора
+                addVoice(1400, 600, 0.07f, volL * 0.6f, volR * 0.6f, 1);
+                addVoice(2200, 1100, 0.06f, volL * 0.5f, volR * 0.5f, 0);
                 break;
-            case SOUND_KILL:
-                addVoice(520, 1040, 0.20f, volL * 0.9f, volR * 0.9f, 2);
-                break;
-            case SOUND_HIT:
-                addVoice(300, 150, 0.06f, volL * 0.5f, volR * 0.5f, 0);
-                break;
+
             case SOUND_VICTORY:
-                addVoice(440, 880, 0.6f, volL * 1.2f, volR * 1.2f, 2);
-                addVoice(660, 1320, 0.8f, volL * 1.0f, volR * 1.0f, 2);
+                // Триумфальный фанфарный аккорд победителя #1
+                addVoice(523.25f, 523.25f, 0.8f, volL * 1.1f, volR * 1.1f, 2); // C5
+                addVoice(659.25f, 659.25f, 0.8f, volL * 1.1f, volR * 1.1f, 2); // E5
+                addVoice(783.99f, 783.99f, 1.2f, volL * 1.3f, volR * 1.3f, 2); // G5
+                addVoice(1046.5f, 1046.5f, 1.5f, volL * 1.4f, volR * 1.4f, 2); // C6
                 break;
+
             case SOUND_DEFEAT:
-                addVoice(330, 165, 0.7f, volL * 1.1f, volR * 1.1f, 1);
+                addVoice(220, 110, 0.9f, volL * 1.0f, volR * 1.0f, 1);
                 break;
         }
     }

@@ -11,7 +11,6 @@ import java.util.ArrayList;
  */
 public final class PUBGPlayer {
 
-    // Состояния передвижения / полета
     public static final int MODE_IN_PLANE = 0;
     public static final int MODE_FREEFALL = 1;
     public static final int MODE_PARACHUTE = 2;
@@ -26,69 +25,55 @@ public final class PUBGPlayer {
     public float yaw = 0;
     public float pitch = 0;
 
-    // Свободный обзор ("Глаз")
     public float eyeYawOffset = 0;
     public float eyePitchOffset = 0;
     public boolean isFreeLooking = false;
 
-    // TPP / FPP
-    public boolean isTPP = true; // вид от 3-го лица по умолчанию в PUBG
+    public boolean isTPP = true;
 
-    // Характеристики
     public float health = 100f;
-    public float boost = 0f;     // полоска энергии (буст от энергетиков)
-    public int helmetLevel = 0;  // 0, 1, 2, 3
-    public int vestLevel = 0;    // 0, 1, 2, 3
+    public float boost = 0f;
+    public int helmetLevel = 0;
+    public int vestLevel = 0;
     public int backpackLevel = 1;
 
     public int kills = 0;
     public boolean isDead = false;
 
-    // Инвентарь оружия PUBG (Слот 1, Слот 2, Пистолет, Нож/Сковорода, Граната)
     public final Weapon[] weapons = new Weapon[5];
     public int activeSlot = 0;
 
-    // Медикаменты и расходники в рюкзаке
     public int firstAidCount = 0;
     public int energyDrinkCount = 0;
     public int ammo556 = 0;
     public int ammo762 = 0;
     public boolean hasPan = false;
 
-    // Таймер лечения (бинты / аптечка)
     public float healTimer = 0f;
     public float maxHealTimer = 0f;
 
-    // Стойка
     public boolean isCrouching = false;
     public boolean isProning = false;
     public boolean isSprinting = false;
     public boolean isAiming = false;
     public float adsFactor = 0f;
 
-    // Наклоны (Peek Left / Right)
-    public float leanAngle = 0f; // -15..+15 градусов
+    public float leanAngle = 0f;
 
-    // Парашют и полет
-    public float fallSpeed = 0f; // км/ч
+    public float fallSpeed = 0f;
     public float altitude = 180f;
 
-    // Управляемый транспорт
     public Vehicle3D currentVehicle = null;
 
-    // Отдача
     public float recoilPitch = 0f;
     public float recoilYaw = 0f;
 
-    // Хитмаркеры
     public float hitMarkerTimer = 0f;
     public boolean hitMarkerHeadshot = false;
     public float damageIndicatorTimer = 0f;
     public float damageAngle = 0f;
 
-    public PUBGPlayer() {
-        // На старте только кулаки / пусто
-    }
+    public PUBGPlayer() {}
 
     public void jumpFromPlane(Math3D.Vec3 planePos, float planeYaw) {
         moveMode = MODE_FREEFALL;
@@ -97,39 +82,35 @@ public final class PUBGPlayer {
         pitch = 30f;
         altitude = planePos.y;
         vel.set(0, -35f, 0);
-        SoundSynth3D.play2D(SoundSynth3D.SOUND_RPG, 0.6f);
+        SoundSynth3D.play2D(SoundSynth3D.SOUND_EXPLOSION, 0.5f);
     }
 
     public void openParachute() {
         if (moveMode == MODE_FREEFALL) {
             moveMode = MODE_PARACHUTE;
-            SoundSynth3D.play2D(SoundSynth3D.SOUND_RELOAD, 0.9f);
+            SoundSynth3D.play2D(SoundSynth3D.SOUND_PARACHUTE_DEPLOY, 1.0f);
         }
     }
 
     public void update(float dt, PUBGMap map, float moveX, float moveZ) {
         if (isDead) return;
 
-        // Пассивное лечение от буста (Energy Drink)
         if (boost > 0) {
             boost = Math.max(0, boost - dt * 1.2f);
             health = Math.min(100f, health + dt * 2.5f);
         }
 
-        // Таймер лечения аптечкой
         if (healTimer > 0) {
             healTimer -= dt;
             if (healTimer <= 0) {
                 health = Math.min(100f, health + 75f);
-                SoundSynth3D.play2D(SoundSynth3D.SOUND_VICTORY, 0.5f);
+                SoundSynth3D.play2D(SoundSynth3D.SOUND_VICTORY, 0.4f);
             }
         }
 
-        // Плавный ADS
         float targetAds = isAiming ? 1.0f : 0f;
         adsFactor = Math3D.lerp(adsFactor, targetAds, dt * 14f);
 
-        // Стабилизация отдачи
         Weapon activeW = getActiveWeapon();
         if (activeW != null) {
             activeW.update(dt);
@@ -140,30 +121,24 @@ public final class PUBGPlayer {
         if (damageIndicatorTimer > 0) damageIndicatorTimer -= dt;
         if (hitMarkerTimer > 0) hitMarkerTimer -= dt;
 
-        // Поведение в зависимости от режима полета / пешком / на машине
         switch (moveMode) {
             case MODE_IN_PLANE:
                 pos.set(map.planePos);
                 break;
-
             case MODE_FREEFALL:
                 updateFreefall(dt, map, moveX, moveZ);
                 break;
-
             case MODE_PARACHUTE:
                 updateParachute(dt, map, moveX, moveZ);
                 break;
-
             case MODE_ON_FOOT:
                 updateOnFoot(dt, map, moveX, moveZ);
                 break;
-
             case MODE_DRIVING:
                 updateDriving(dt, map, moveX, moveZ);
                 break;
         }
 
-        // Урон от Синей Зоны (Blue Zone)
         float distToZone = Math3D.dist(pos.x, 0, pos.z, map.blueZoneX, 0, map.blueZoneZ);
         if (distToZone > map.blueZoneRadius && moveMode == MODE_ON_FOOT) {
             takeDamage(5.5f * dt * map.zonePhase, null);
@@ -171,7 +146,7 @@ public final class PUBGPlayer {
     }
 
     private void updateFreefall(float dt, PUBGMap map, float moveX, float moveZ) {
-        float speed = (pitch > 45f) ? 220f : 160f; // км/ч при пикировании
+        float speed = (pitch > 45f) ? 220f : 160f;
         fallSpeed = speed;
 
         float rad = yaw * Math3D.TO_RAD;
@@ -184,14 +159,13 @@ public final class PUBGPlayer {
         pos.z += vel.z * dt;
         altitude = pos.y;
 
-        // Автоматическое открытие парашюта на высоте 50м
         if (pos.y <= 50f) {
             openParachute();
         }
     }
 
     private void updateParachute(float dt, PUBGMap map, float moveX, float moveZ) {
-        fallSpeed = 25f; // мягкое планирование
+        fallSpeed = 25f;
 
         float rad = yaw * Math3D.TO_RAD;
         vel.x = -(float) Math.sin(rad) * 12f;
@@ -236,7 +210,6 @@ public final class PUBGPlayer {
             vel.y = 0;
         }
 
-        // Авто-подбор лута при приближении
         for (LootItem item : map.loot) {
             if (!item.isTaken && Math3D.dist(pos.x, pos.y, pos.z, item.x, item.y, item.z) < 1.8f) {
                 pickupItem(item);
@@ -254,19 +227,17 @@ public final class PUBGPlayer {
 
     public void enterExitVehicle(PUBGMap map) {
         if (moveMode == MODE_DRIVING) {
-            // Выход из машины
             if (currentVehicle != null) currentVehicle.hasDriver = false;
             currentVehicle = null;
             moveMode = MODE_ON_FOOT;
             pos.x += 2.0f;
-            SoundSynth3D.play2D(SoundSynth3D.SOUND_RELOAD, 0.6f);
+            SoundSynth3D.play2D(SoundSynth3D.SOUND_DOOR_CLOSE, 0.7f);
         } else {
-            // Поиск ближайшего транспорта
             for (Vehicle3D v : map.vehicles) {
                 if (Math3D.dist(pos.x, pos.y, pos.z, v.pos.x, v.pos.y, v.pos.z) < 4.0f) {
                     currentVehicle = v;
                     moveMode = MODE_DRIVING;
-                    SoundSynth3D.play2D(SoundSynth3D.SOUND_RELOAD, 0.8f);
+                    SoundSynth3D.play2D(SoundSynth3D.SOUND_DOOR_OPEN, 0.8f);
                     break;
                 }
             }
@@ -284,7 +255,7 @@ public final class PUBGPlayer {
 
     public void pickupItem(LootItem item) {
         item.isTaken = true;
-        SoundSynth3D.play2D(SoundSynth3D.SOUND_RELOAD, 0.5f);
+        SoundSynth3D.play2D(SoundSynth3D.SOUND_RELOAD, 0.6f);
 
         switch (item.type) {
             case LootItem.TYPE_WEAPON:
@@ -310,6 +281,7 @@ public final class PUBGPlayer {
             case LootItem.TYPE_PAN:
                 hasPan = true;
                 weapons[3] = Weapon.create(Weapon.ID_KNIFE);
+                SoundSynth3D.play2D(SoundSynth3D.SOUND_PAN, 0.9f);
                 break;
         }
     }
@@ -317,9 +289,9 @@ public final class PUBGPlayer {
     public void useMedkit() {
         if (firstAidCount > 0 && health < 100f && healTimer <= 0) {
             firstAidCount--;
-            healTimer = 5.0f; // 5 секунд бинтования
+            healTimer = 5.0f;
             maxHealTimer = 5.0f;
-            SoundSynth3D.play2D(SoundSynth3D.SOUND_STEP, 0.4f);
+            SoundSynth3D.play2D(SoundSynth3D.SOUND_BANDAGE, 0.8f);
         }
     }
 
@@ -327,7 +299,7 @@ public final class PUBGPlayer {
         if (energyDrinkCount > 0 && boost < 100f) {
             energyDrinkCount--;
             boost = Math.min(100f, boost + 40f);
-            SoundSynth3D.play2D(SoundSynth3D.SOUND_RELOAD, 0.7f);
+            SoundSynth3D.play2D(SoundSynth3D.SOUND_DRINK_OPEN, 0.9f);
         }
     }
 
@@ -338,7 +310,6 @@ public final class PUBGPlayer {
     public void takeDamage(float dmg, Math3D.Vec3 attackerPos) {
         if (isDead) return;
 
-        // Защита шлема и бронежилета
         float armorMul = 1.0f - (vestLevel * 0.18f);
         dmg *= armorMul;
 
@@ -352,7 +323,7 @@ public final class PUBGPlayer {
             damageAngle = angleToAttacker - yaw;
         }
 
-        SoundSynth3D.play2D(SoundSynth3D.SOUND_HIT, 0.7f);
+        SoundSynth3D.play2D(SoundSynth3D.SOUND_BODY_HIT, 0.8f);
 
         if (health <= 0) {
             health = 0;
