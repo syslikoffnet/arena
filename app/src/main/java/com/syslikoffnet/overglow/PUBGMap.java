@@ -179,6 +179,10 @@ public final class PUBGMap {
 
             loot.add(LootItem.createWeapon(lootId++, (doorId % 2 == 0 ? Weapon.ID_M4 : Weapon.ID_AKR),
                     (doorId % 2 == 0 ? "M416" : "AKM"), hx - 2, hy + 0.2f, hz));
+            loot.add(LootItem.createAttachment(lootId++, (doorId % 2 == 0 ? WeaponAttachment.ID_MUZZLE_COMPENSATOR : WeaponAttachment.ID_MUZZLE_SUPPRESSOR),
+                    (doorId % 2 == 0 ? "Compensator" : "Suppressor"), hx - 3, hy + 0.2f, hz + 1));
+            loot.add(LootItem.createAttachment(lootId++, (doorId % 2 == 0 ? WeaponAttachment.ID_SCOPE_4X : WeaponAttachment.ID_GRIP_VERTICAL),
+                    (doorId % 2 == 0 ? "4x ACOG Scope" : "Vertical Grip"), hx + 3, hy + 0.2f, hz - 1));
             loot.add(LootItem.createAmmo(lootId++, "5.56mm Ammo", 60, hx + 2, hy + 0.2f, hz));
             loot.add(LootItem.createMedkit(lootId++, "First Aid Kit", hx, hy + 0.2f, hz + 2));
             loot.add(LootItem.createDrink(lootId++, "Energy Drink", hx - 2, hy + 0.2f, hz + 2));

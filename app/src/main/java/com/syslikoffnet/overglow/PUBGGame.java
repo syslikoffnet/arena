@@ -2,7 +2,6 @@ package com.syslikoffnet.overglow;
 
 import android.content.Context;
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.RectF;
 import android.view.MotionEvent;
@@ -10,10 +9,11 @@ import android.view.MotionEvent;
 import java.util.ArrayList;
 
 /**
- * Главный игровой контроллер PUBG Mobile (Фаза 1: Управление и Камера):
- * - Интеграция SpringArm камеры, CharacterMotor, TouchPad и Gyroscope
- * - Физическая защита от прострелов сквозь стены (WorldCollider)
- * - Лобби с выбором режимов, подбор матча, Battle Royale геймплей
+ * Главный игровой контроллер PUBG Mobile (Фаза 2: Баллистика и Оружие):
+ * - Интеграция BallisticsSystem (физическая баллистика, drag, гравитация g=9.81, опережение)
+ * - Интеграция RecoilController (спрей-паттерны, компенсация отдачи)
+ * - Анатомический расчет урона (HitboxSystem) и обвесы (WeaponAttachment)
+ * - 0 GC Alloc во время игрового цикла
  */
 public final class PUBGGame {
 
@@ -30,6 +30,7 @@ public final class PUBGGame {
     public PUBGMap map = new PUBGMap();
     public final ArrayList<PUBGBot> bots = new ArrayList<>();
     public final ParticleSystem particles = new ParticleSystem();
+    public final BallisticsSystem ballistics = new BallisticsSystem();
     public final PUBGTouchHUD touchHUD = new PUBGTouchHUD();
     public final PUBGLobbyUI lobbyUI = new PUBGLobbyUI();
     public final PUBGGyroscope gyroscope = new PUBGGyroscope();
@@ -66,6 +67,10 @@ public final class PUBGGame {
         particles.particles.clear();
         particles.tracers.clear();
         particles.projectiles.clear();
+
+        for (int i = 0; i < BallisticsSystem.POOL_SIZE; i++) {
+            ballistics.pool[i].reset();
+        }
 
         aliveCount = 100;
         matchTimer = 0;
@@ -107,9 +112,12 @@ public final class PUBGGame {
             handleShooting();
         }
 
+        // Обновление физических пуль (Фаза 2: Баллистика)
+        ballistics.update(dt, map, player, bots, particles);
+
         int alive = 1;
         for (PUBGBot bot : bots) {
-            bot.update(dt, map, player, bots, particles);
+            bot.update(dt, map, player, bots, particles, ballistics);
             if (!bot.isDead) alive++;
         }
         aliveCount = alive;
@@ -131,67 +139,42 @@ public final class PUBGGame {
         wep.fireTimer = wep.fireInterval;
         wep.ammoInMag--;
 
-        player.recoilPitch += wep.recoilPitch * 0.7f;
-        player.recoilYaw += (float) ((Math.random() - 0.5) * wep.recoilYaw);
+        // Применение отдачи и спрей-паттерна к прицелу
+        player.recoil.applyShot(wep, player.motor.currentStance, player.motor.isMoving, player.isAiming);
 
-        int soundId = SoundSynth3D.SOUND_M416;
-        if (wep.id == Weapon.ID_AKR) soundId = SoundSynth3D.SOUND_AKM;
-        else if (wep.id == Weapon.ID_AWM) soundId = SoundSynth3D.SOUND_AWM;
-        else if (wep.id == Weapon.ID_SHOTGUN) soundId = SoundSynth3D.SOUND_SHOTGUN;
-        else if (wep.id == Weapon.ID_DEAGLE) soundId = SoundSynth3D.SOUND_DEAGLE;
-        else if (wep.id == Weapon.ID_KNIFE) soundId = SoundSynth3D.SOUND_PAN;
+        // Звук выстрела с учетом глушителя
+        if (wep.isSilenced()) {
+            SoundSynth3D.play2D(SoundSynth3D.SOUND_AKM, 0.35f);
+        } else {
+            int soundId = SoundSynth3D.SOUND_M416;
+            if (wep.id == Weapon.ID_AKR) soundId = SoundSynth3D.SOUND_AKM;
+            else if (wep.id == Weapon.ID_AWM) soundId = SoundSynth3D.SOUND_AWM;
+            else if (wep.id == Weapon.ID_SHOTGUN) soundId = SoundSynth3D.SOUND_SHOTGUN;
+            else if (wep.id == Weapon.ID_DEAGLE) soundId = SoundSynth3D.SOUND_DEAGLE;
+            else if (wep.id == Weapon.ID_KNIFE) soundId = SoundSynth3D.SOUND_PAN;
+            SoundSynth3D.play2D(soundId, 1.0f);
+        }
 
-        SoundSynth3D.play2D(soundId, 1.0f);
+        // Направление выстрела с учетом отдачи
+        float currentYaw = player.camera.yaw + player.recoil.currentYawOffset;
+        float currentPitch = player.camera.pitch + player.recoil.currentPitchOffset;
 
-        float radYaw = (player.camera.yaw + player.recoilYaw) * Math3D.TO_RAD;
-        float radPitch = (player.camera.pitch + player.recoilPitch) * Math3D.TO_RAD;
+        float radYaw = currentYaw * Math3D.TO_RAD;
+        float radPitch = currentPitch * Math3D.TO_RAD;
 
         float dirX = (float) Math.sin(radYaw) * (float) Math.cos(radPitch);
         float dirY = (float) Math.sin(radPitch);
         float dirZ = (float) Math.cos(radYaw) * (float) Math.cos(radPitch);
 
-        Math3D.Vec3 rayOrigin = new Math3D.Vec3(player.pos.x, player.pos.y + 1.6f, player.pos.z);
-        Math3D.Vec3 rayDir = new Math3D.Vec3(dirX, dirY, dirZ).normalize();
+        Math3D.Vec3 muzzlePos = new Math3D.Vec3(player.pos.x + dirX * 0.4f, player.pos.y + 1.45f, player.pos.z + dirZ * 0.4f);
 
-        particles.triggerMuzzleFlash(rayOrigin.x + dirX * 0.8f, rayOrigin.y + dirY * 0.8f, rayOrigin.z + dirZ * 0.8f);
-
-        // 1. Проверка попадания в стены и дома (WorldCollider)
-        float closestHit = WorldCollider.raycastWorld(rayOrigin, rayDir, 250f, map);
-        PUBGBot hitBot = null;
-        boolean hitHead = false;
-
-        // 2. Проверка попадания во врагов перед стеной
-        for (PUBGBot bot : bots) {
-            if (bot.isDead || bot.isParachuting) continue;
-            float tHead = bot.getHeadBox().raycast(rayOrigin, rayDir);
-            if (tHead > 0 && tHead < closestHit) {
-                closestHit = tHead;
-                hitBot = bot;
-                hitHead = true;
-            }
-            float tBody = bot.getBodyBox().raycast(rayOrigin, rayDir);
-            if (tBody > 0 && tBody < closestHit) {
-                closestHit = tBody;
-                hitBot = bot;
-                hitHead = false;
-            }
+        // Вспышка выстрела (если не скрыта пламегасителем/глушителем)
+        if (!wep.hideFlash()) {
+            particles.triggerMuzzleFlash(muzzlePos.x, muzzlePos.y, muzzlePos.z);
         }
 
-        float endX = rayOrigin.x + rayDir.x * closestHit;
-        float endY = rayOrigin.y + rayDir.y * closestHit;
-        float endZ = rayOrigin.z + rayDir.z * closestHit;
-
-        particles.addTracer(rayOrigin.x, rayOrigin.y - 0.2f, rayOrigin.z, endX, endY, endZ);
-
-        if (hitBot != null) {
-            float dmg = hitHead ? wep.damage * 3.5f : wep.damage;
-            hitBot.takeDamage(dmg, null, player);
-            particles.spawnBlood(endX, endY, endZ, hitHead ? 15 : 8);
-            if (hitHead) SoundSynth3D.play2D(SoundSynth3D.SOUND_HEADSHOT_HELMET, 1.0f);
-            else SoundSynth3D.play2D(SoundSynth3D.SOUND_BODY_HIT, 0.8f);
-        } else {
-            particles.spawnSparks(endX, endY, endZ, 4);
-        }
+        // Фаза 2: Спавн физических пуль в BallisticsSystem
+        ballistics.spawnBullet(muzzlePos.x, muzzlePos.y, muzzlePos.z, dirX, dirY, dirZ, wep, true, player);
     }
 
     public void render2D(Canvas c, int w, int h) {

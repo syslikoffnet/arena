@@ -1,7 +1,7 @@
 package com.syslikoffnet.overglow;
 
 /**
- * Лут на полу в PUBG Mobile: Оружие, патроны, аптечки, энергетики, броня, шлемы, рюкзаки, сковорода.
+ * Лут на полу в PUBG Mobile: Оружие, модули/обвесы, патроны, аптечки, энергетики, броня, шлемы, рюкзаки, сковорода.
  */
 public final class LootItem {
 
@@ -14,12 +14,13 @@ public final class LootItem {
     public static final int TYPE_VEST = 5;
     public static final int TYPE_BACKPACK = 6;
     public static final int TYPE_PAN = 7;
-    public static final int TYPE_AIRDROP = 8;
+    public static final int TYPE_ATTACHMENT = 8;
+    public static final int TYPE_AIRDROP = 9;
 
     public final int id;
     public final int type;
     public final String name;
-    public final int subId; // ID оружия / уровень брони (1, 2, 3)
+    public final int subId; // ID оружия / уровень брони / ID обвеса
     public final int count;
 
     public float x, y, z;
@@ -39,6 +40,10 @@ public final class LootItem {
 
     public static LootItem createWeapon(int id, int weaponId, String name, float x, float y, float z) {
         return new LootItem(id, TYPE_WEAPON, name, weaponId, 1, x, y, z);
+    }
+
+    public static LootItem createAttachment(int id, int attachId, String name, float x, float y, float z) {
+        return new LootItem(id, TYPE_ATTACHMENT, name, attachId, 1, x, y, z);
     }
 
     public static LootItem createAmmo(int id, String name, int count, float x, float y, float z) {

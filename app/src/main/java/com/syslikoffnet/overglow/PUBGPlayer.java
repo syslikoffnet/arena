@@ -22,6 +22,7 @@ public final class PUBGPlayer {
     // Мотор персонажа и TPP Камера
     public final CharacterMotor motor = new CharacterMotor();
     public final SpringArmCamera camera = new SpringArmCamera();
+    public final RecoilController recoil = new RecoilController();
 
     // Быстрый доступ к координатам для совместимости
     public final Math3D.Vec3 pos = motor.position;
@@ -117,8 +118,9 @@ public final class PUBGPlayer {
         Weapon activeW = getActiveWeapon();
         if (activeW != null) {
             activeW.update(dt);
-            recoilPitch = Math.max(0, recoilPitch - activeW.recoilRecovery * dt);
-            recoilYaw = Math3D.lerp(recoilYaw, 0, activeW.recoilRecovery * dt);
+            recoil.update(dt, activeW);
+            recoilPitch = recoil.currentPitchOffset;
+            recoilYaw = recoil.currentYawOffset;
         }
 
         if (damageIndicatorTimer > 0) damageIndicatorTimer -= dt;
@@ -283,6 +285,13 @@ public final class PUBGPlayer {
                 hasPan = true;
                 weapons[3] = Weapon.create(Weapon.ID_KNIFE);
                 SoundSynth3D.play2D(SoundSynth3D.SOUND_PAN, 0.9f);
+                break;
+            case LootItem.TYPE_ATTACHMENT:
+                Weapon active = getActiveWeapon();
+                if (active != null) {
+                    active.attach(WeaponAttachment.create(item.subId));
+                    SoundSynth3D.play2D(SoundSynth3D.SOUND_RELOAD, 0.8f);
+                }
                 break;
         }
     }

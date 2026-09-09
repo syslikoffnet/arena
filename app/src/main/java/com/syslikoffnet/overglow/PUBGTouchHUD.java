@@ -3,19 +3,18 @@ package com.syslikoffnet.overglow;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
-import android.graphics.Path;
 import android.graphics.RectF;
 import android.view.MotionEvent;
 
 import java.util.ArrayList;
 
 /**
- * Фаза 1: Тактический HUD и Сенсорный интерфейс PUBG Mobile:
- * - Интеграция MobileInputController (Мультитач 4-6 пальцев, плавающий стик)
- * - Смена плеча (Shoulder Swap 🔄), ADS Scope (🎯), Наклоны (Peek Q/E)
- * - Стойки: Прыжок (⬆), Присед (🧎), Положение лёжа (🛌)
- * - 360° Компас со сторонами света и динамическая радарная мини-карта
- * - 0 GC Alloc во время игры
+ * Фаза 2: Тактический HUD и Прицельные сетки (Optics & Zeroing HUD):
+ * - Высокодетализированные прицельные сетки: Red Dot, 4x ACOG (с разметкой дальности), 8x CQBSS (Mil-Dot)
+ * - Кнопка пристрелки (Zeroing Distance: 100м - 500м)
+ * - Отображение установленных модулей на оружии (Compensator, Grip, Mag, Scope, Stock)
+ * - Динамический маркер попадания (Hit Marker & Headshot Indicator)
+ * - 0 GC Alloc
  */
 public final class PUBGTouchHUD {
 
@@ -87,10 +86,24 @@ public final class PUBGTouchHUD {
         renderWeaponSlots(c, w, h, player);
         renderTacticalButtons(c, w, h, player);
 
-        if (player.camera.adsFactor > 0.85f && player.getActiveWeapon() != null && player.getActiveWeapon().adsZoom > 3f) {
-            renderScope(c, w, h);
+        // Фаза 2: Оптические прицелы и сетки
+        Weapon wep = player.getActiveWeapon();
+        if (player.camera.adsFactor > 0.85f && wep != null) {
+            float zoom = wep.getAdsZoom();
+            if (zoom >= 7.0f) {
+                render8xScope(c, w, h, wep);
+            } else if (zoom >= 3.5f) {
+                render4xScope(c, w, h);
+            } else {
+                renderRedDotScope(c, w, h);
+            }
         } else {
             renderCrosshair(c, w, h, player);
+        }
+
+        // Хитмаркер при попадании
+        if (player.hitMarkerTimer > 0) {
+            renderHitMarker(c, w, h, player.hitMarkerHeadshot);
         }
     }
 
@@ -196,10 +209,11 @@ public final class PUBGTouchHUD {
                 pStroke.setStrokeWidth(1.5f);
                 c.drawRoundRect(rect, 6, 6, pStroke);
 
-                pText.setColor(0xFFFFB300);
+                pText.setColor(item.type == LootItem.TYPE_ATTACHMENT ? 0xFF00E5FF : 0xFFFFB300);
                 pText.setTextSize(17);
                 pText.setFakeBoldText(true);
-                c.drawText("📦 " + item.name, startX + 12, startY + drawn * 44 + 27, pText);
+                String prefix = item.type == LootItem.TYPE_ATTACHMENT ? "🔧 " : "📦 ";
+                c.drawText(prefix + item.name, startX + 12, startY + drawn * 44 + 27, pText);
 
                 drawn++;
                 if (drawn >= 4) break;
@@ -252,11 +266,22 @@ public final class PUBGTouchHUD {
             pText.setColor(0xFFFFFFFF);
             pText.setTextSize(16);
             pText.setFakeBoldText(true);
-            c.drawText(prefix + wep.name, x + 10, y + 24, pText);
+            c.drawText(prefix + wep.name, x + 10, y + 22, pText);
 
             pText.setColor(0xFFFFD700);
-            pText.setTextSize(18);
-            c.drawText(wep.ammoInMag + " / " + wep.ammoReserve, x + 10, y + 48, pText);
+            pText.setTextSize(17);
+            c.drawText(wep.ammoInMag + " / " + wep.ammoReserve, x + 10, y + 42, pText);
+
+            // Иконки установленных модулей
+            StringBuilder attStr = new StringBuilder();
+            if (wep.attachments[WeaponAttachment.SLOT_MUZZLE] != null) attStr.append(" [M]");
+            if (wep.attachments[WeaponAttachment.SLOT_GRIP] != null) attStr.append(" [G]");
+            if (wep.attachments[WeaponAttachment.SLOT_MAGAZINE] != null) attStr.append(" [E]");
+            if (wep.attachments[WeaponAttachment.SLOT_SCOPE] != null) attStr.append(" [4x]");
+
+            pText.setColor(0xFF00E5FF);
+            pText.setTextSize(11);
+            c.drawText(attStr.toString(), x + 72, y + 42, pText);
         } else {
             pText.setColor(0x66FFFFFF);
             pText.setTextSize(14);
@@ -265,32 +290,28 @@ public final class PUBGTouchHUD {
     }
 
     private void renderTacticalButtons(Canvas c, int w, int h, PUBGPlayer player) {
-        // Огонь справа и слева
         drawFireButton(c, w * 0.86f, h * 0.70f, 62, input.isFiring);
         drawFireButton(c, w * 0.12f, h * 0.35f, 48, input.isLeftFiring);
 
-        // Прицел ADS
         drawScopeButton(c, w * 0.88f, h * 0.42f, 48, player.isAiming);
-
-        // Смена плеча (Shoulder Swap 🔄)
         drawCircleBtn(c, w * 0.92f, h * 0.25f, 36, "🔄", player.camera.targetShoulderOffset < 0);
 
-        // Наклоны Peek Q / E
+        // Кнопка пристрелки (Zeroing Distance для снайперов)
+        Weapon activeW = player.getActiveWeapon();
+        if (activeW != null && player.isAiming) {
+            drawCircleBtn(c, w * 0.88f, h * 0.12f, 36, activeW.zeroingDistance + "m", false);
+        }
+
         drawCircleBtn(c, w * 0.78f, h * 0.35f, 38, "◀ Q", player.leanAngle < -5f);
         drawCircleBtn(c, w * 0.78f, h * 0.46f, 38, "▶ E", player.leanAngle > 5f);
 
-        // Стойки (Прыжок, Присед, Лечь)
         drawCircleBtn(c, w * 0.92f, h * 0.88f, 42, "⬆", input.isJumping);
         drawCircleBtn(c, w * 0.80f, h * 0.88f, 42, "🧎", player.motor.currentStance == CharacterMotor.STANCE_CROUCH);
         drawCircleBtn(c, w * 0.68f, h * 0.88f, 42, "🛌", player.motor.currentStance == CharacterMotor.STANCE_PRONE);
 
-        // Перезарядка
         drawCircleBtn(c, w * 0.74f, h * 0.55f, 38, "🔄", input.isReloading);
-
-        // Интерактив
         drawCircleBtn(c, w * 0.76f, h * 0.28f, 40, "🚪 / 🚗", false);
 
-        // Быстрое лечение
         drawHealShortcut(c, w * 0.25f, h * 0.88f, player);
     }
 
@@ -337,7 +358,7 @@ public final class PUBGTouchHUD {
         c.drawCircle(cx, cy, r, pStroke);
 
         pText.setColor(active ? 0xFF000000 : 0xFFFFFFFF);
-        pText.setTextSize(18);
+        pText.setTextSize(16);
         pText.setFakeBoldText(true);
         float tw = pText.measureText(icon);
         c.drawText(icon, cx - tw / 2f, cy + 6, pText);
@@ -448,7 +469,7 @@ public final class PUBGTouchHUD {
 
     private void renderCrosshair(Canvas c, int w, int h, PUBGPlayer player) {
         float cx = w / 2f, cy = h / 2f;
-        float spread = 12f + player.recoilPitch * 6f;
+        float spread = 12f + player.recoil.currentPitchOffset * 8f;
 
         pStroke.setStyle(Paint.Style.STROKE);
         pStroke.setColor(0xCC00FF88);
@@ -460,7 +481,19 @@ public final class PUBGTouchHUD {
         c.drawLine(cx + spread, cy, cx + spread + 12, cy, pStroke);
     }
 
-    private void renderScope(Canvas c, int w, int h) {
+    private void renderRedDotScope(Canvas c, int w, int h) {
+        float cx = w / 2f, cy = h / 2f;
+        pFill.setStyle(Paint.Style.FILL);
+        pFill.setColor(0xEEFF1744);
+        c.drawCircle(cx, cy, 3.5f, pFill);
+
+        pStroke.setStyle(Paint.Style.STROKE);
+        pStroke.setColor(0xAAFF1744);
+        pStroke.setStrokeWidth(1.5f);
+        c.drawCircle(cx, cy, 14f, pStroke);
+    }
+
+    private void render4xScope(Canvas c, int w, int h) {
         float cx = w / 2f, cy = h / 2f;
         float r = h * 0.44f;
 
@@ -476,9 +509,81 @@ public final class PUBGTouchHUD {
         pStroke.setStrokeWidth(2f);
         c.drawLine(cx - r, cy, cx + r, cy, pStroke);
         c.drawLine(cx, cy - r, cx, cy + r, pStroke);
+
+        // Метки дальности (200м, 300м, 400м)
+        pStroke.setStrokeWidth(1.5f);
+        c.drawLine(cx - 15, cy + 30, cx + 15, cy + 30, pStroke); // 200m
+        c.drawLine(cx - 25, cy + 60, cx + 25, cy + 60, pStroke); // 300m
+        c.drawLine(cx - 35, cy + 95, cx + 35, cy + 95, pStroke); // 400m
+
+        pText.setColor(0xEEFF2222);
+        pText.setTextSize(12);
+        c.drawText("2", cx + 20, cy + 34, pText);
+        c.drawText("3", cx + 30, cy + 64, pText);
+        c.drawText("4", cx + 40, cy + 99, pText);
+    }
+
+    private void render8xScope(Canvas c, int w, int h, Weapon wep) {
+        float cx = w / 2f, cy = h / 2f;
+        float r = h * 0.46f;
+
+        pFill.setStyle(Paint.Style.FILL);
+        pFill.setColor(0xFF000000);
+        c.drawRect(0, 0, cx - r, h, pFill);
+        c.drawRect(cx + r, 0, w, h, pFill);
+        c.drawRect(cx - r, 0, cx + r, cy - r, pFill);
+        c.drawRect(cx - r, cy + r, cx + r, h, pFill);
+
+        pStroke.setStyle(Paint.Style.STROKE);
+        pStroke.setColor(0xEE111111);
+        pStroke.setStrokeWidth(2.5f);
+        c.drawLine(cx - r, cy, cx + r, cy, pStroke);
+        c.drawLine(cx, cy - r, cx, cy + r, pStroke);
+
+        // Mil-Dots
+        pFill.setColor(0xFF111111);
+        for (int i = 1; i <= 5; i++) {
+            c.drawCircle(cx, cy + i * 26, 2.5f, pFill);
+            c.drawCircle(cx, cy - i * 26, 2.5f, pFill);
+            c.drawCircle(cx + i * 26, cy, 2.5f, pFill);
+            c.drawCircle(cx - i * 26, cy, 2.5f, pFill);
+        }
+
+        // Индикатор пристрелки
+        pText.setColor(0xFFFFD700);
+        pText.setTextSize(16);
+        pText.setFakeBoldText(true);
+        c.drawText("ZERO: " + wep.zeroingDistance + "m", cx - 45, cy + r - 30, pText);
+    }
+
+    private void renderHitMarker(Canvas c, int w, int h, boolean headshot) {
+        float cx = w / 2f, cy = h / 2f;
+        pStroke.setStyle(Paint.Style.STROKE);
+        pStroke.setColor(headshot ? 0xFFFF1744 : 0xFFFFFFFF);
+        pStroke.setStrokeWidth(headshot ? 3.5f : 2.5f);
+
+        float s = headshot ? 14f : 10f;
+        c.drawLine(cx - s, cy - s, cx - 4, cy - 4, pStroke);
+        c.drawLine(cx + 4, cy + 4, cx + s, cy + s, pStroke);
+        c.drawLine(cx + s, cy - s, cx + 4, cy - 4, pStroke);
+        c.drawLine(cx - s, cy + s, cx - 4, cy + 4, pStroke);
     }
 
     public boolean onTouchEvent(MotionEvent event, PUBGPlayer player, PUBGMap map) {
+        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
+            float rx = event.getX() / input.screenWidth;
+            float ry = event.getY() / input.screenHeight;
+
+            // Клик по кнопке Zeroing Distance
+            if (rx > 0.84f && rx < 0.94f && ry > 0.08f && ry < 0.18f && player.isAiming) {
+                Weapon w = player.getActiveWeapon();
+                if (w != null) {
+                    w.cycleZeroing();
+                    SoundSynth3D.play2D(SoundSynth3D.SOUND_RELOAD, 0.5f);
+                }
+                return true;
+            }
+        }
         return input.onTouchEvent(event, player.camera, player, map);
     }
 

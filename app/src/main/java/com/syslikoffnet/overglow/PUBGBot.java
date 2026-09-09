@@ -3,10 +3,10 @@ package com.syslikoffnet.overglow;
 import java.util.ArrayList;
 
 /**
- * 3D Бот для PUBG Mobile:
- * - Прыгает с парашютом из самолета в города (Починки, Сосновка)
- * - Лутает оружие, бежит в безопасную Белую Зону, спасаясь от Синей Зоны
- * - Ведет позиционный бой, использует укрытия, оставляет ящик с лутом после смерти
+ * 3D Бот для PUBG Mobile (Фаза 2: Баллистика и перестрелки):
+ * - Стрельба с физической баллистикой через BallisticsSystem
+ * - Прыгает с парашютом, лутается, двигается в Белую Зону
+ * - Использует укрытия, перезаряжается, оставляет ящик смерти
  */
 public final class PUBGBot {
 
@@ -36,16 +36,26 @@ public final class PUBGBot {
         this.id = id;
         this.name = name;
         this.pos.set(dropX, 150f, dropZ);
-        this.targetPos.set(dropX + (float)((Math.random() - 0.5) * 40), 0, dropZ + (float)((Math.random() - 0.5) * 40));
+        this.targetPos.set(dropX + (float) ((Math.random() - 0.5) * 40), 0, dropZ + (float) ((Math.random() - 0.5) * 40));
         this.weapon = Weapon.create(id % 3 == 0 ? Weapon.ID_AWM : (id % 2 == 0 ? Weapon.ID_AKR : Weapon.ID_M4));
     }
 
-    public void update(float dt, PUBGMap map, PUBGPlayer player, ArrayList<PUBGBot> allBots, ParticleSystem particles) {
+    public Math3D.AABB getHeadBox() {
+        return new Math3D.AABB(pos.x - 0.25f, pos.y + 1.45f, pos.z - 0.25f,
+                pos.x + 0.25f, pos.y + 1.85f, pos.z + 0.25f);
+    }
+
+    public Math3D.AABB getBodyBox() {
+        return new Math3D.AABB(pos.x - 0.35f, pos.y, pos.z - 0.35f,
+                pos.x + 0.35f, pos.y + 1.45f, pos.z + 0.35f);
+    }
+
+    public void update(float dt, PUBGMap map, PUBGPlayer player, ArrayList<PUBGBot> allBots,
+                       ParticleSystem particles, BallisticsSystem ballistics) {
         if (isDead) return;
 
         float gHeight = map.getTerrainHeight(pos.x, pos.z);
 
-        // Фаза парашюта
         if (isParachuting) {
             pos.y -= 14f * dt;
             if (pos.y <= gHeight) {
@@ -65,14 +75,14 @@ public final class PUBGBot {
 
         if (!player.isDead && player.moveMode != PUBGPlayer.MODE_IN_PLANE) {
             float distToPlayer = Math3D.dist(pos.x, pos.y, pos.z, player.pos.x, player.pos.y, player.pos.z);
-            if (distToPlayer < 65f) {
+            if (distToPlayer < 75f) {
                 enemyPos = player.pos;
                 targetIsPlayer = true;
             }
         }
 
         if (enemyPos == null) {
-            float closest = 50f;
+            float closest = 60f;
             for (PUBGBot other : allBots) {
                 if (other != this && !other.isDead && !other.isParachuting) {
                     float d = Math3D.dist(pos.x, pos.y, pos.z, other.pos.x, other.pos.y, other.pos.z);
@@ -87,12 +97,12 @@ public final class PUBGBot {
 
         // Логика боя или движения в Зону
         if (enemyPos != null) {
-            engage(dt, enemyPos, targetIsPlayer, player, allBots, particles);
+            engage(dt, enemyPos, targetIsPlayer, player, allBots, particles, ballistics);
         } else {
             moveToSafeZone(dt, map);
         }
 
-        // Гравитация
+        // Гравитация и физика
         vel.y -= 18f * dt;
         pos.x += vel.x * dt;
         pos.z += vel.z * dt;
@@ -103,24 +113,30 @@ public final class PUBGBot {
             vel.y = 0;
         }
 
+        WorldCollider.resolveCharacterCollision(pos, 0.38f, 1.8f, map);
+
         float hSpeed = (float) Math.sqrt(vel.x * vel.x + vel.z * vel.z);
         if (hSpeed > 0.1f) legAngle += dt * 10f;
 
         // Урон от Синей зоны
         float distToZone = Math3D.dist(pos.x, 0, pos.z, map.blueZoneX, 0, map.blueZoneZ);
         if (distToZone > map.blueZoneRadius) {
-            takeDamage(4f * dt * map.zonePhase, null, player);
+            takeDamage(5.0f * dt * map.zonePhase, null, player);
         }
     }
 
-    private void engage(float dt, Math3D.Vec3 enemyPos, boolean targetIsPlayer, PUBGPlayer player,
-                        ArrayList<PUBGBot> allBots, ParticleSystem particles) {
+    private void engage(float dt, Math3D.Vec3 enemyPos, boolean targetIsPlayer,
+                        PUBGPlayer player, ArrayList<PUBGBot> allBots,
+                        ParticleSystem particles, BallisticsSystem ballistics) {
         float dx = enemyPos.x - pos.x;
         float dz = enemyPos.z - pos.z;
         float dist = (float) Math.sqrt(dx * dx + dz * dz);
 
-        float targetYaw = (float) Math.atan2(-dx, dz) * Math3D.TO_DEG;
-        yaw = Math3D.lerp(yaw, targetYaw, dt * 7f);
+        float targetYaw = (float) Math.atan2(dx, dz) * Math3D.TO_DEG;
+        yaw = Math3D.lerpAngle(yaw, targetYaw, dt * 7f);
+
+        float dy = (enemyPos.y + 1.2f) - (pos.y + 1.4f);
+        pitch = (float) Math.atan2(dy, dist) * Math3D.TO_DEG;
 
         if (strafeTimer <= 0) {
             strafeDir = (Math.random() > 0.5) ? 1f : -1f;
@@ -132,30 +148,25 @@ public final class PUBGBot {
         vel.z = (float) Math.sin(rad) * strafeDir * 2.8f;
 
         if (weapon.canFire()) {
-            weapon.fireTimer = weapon.fireInterval + (float) (Math.random() * 0.08f);
+            weapon.fireTimer = weapon.fireInterval + (float) (Math.random() * 0.12f);
             weapon.ammoInMag--;
 
-            SoundSynth3D.playSound(SoundSynth3D.SOUND_AKR, pos.x, pos.y + 1.4f, pos.z, player.pos, player.yaw);
+            SoundSynth3D.play2D(SoundSynth3D.SOUND_AKM, 0.7f);
 
-            float spread = (float) ((Math.random() - 0.5) * 0.8f);
-            float tx = enemyPos.x + spread;
-            float ty = enemyPos.y + 1.2f + spread * 0.4f;
-            float tz = enemyPos.z + spread;
+            float radY = yaw * Math3D.TO_RAD;
+            float radP = pitch * Math3D.TO_RAD;
 
-            particles.addTracer(pos.x, pos.y + 1.4f, pos.z, tx, ty, tz);
-            particles.triggerMuzzleFlash(pos.x, pos.y + 1.4f, pos.z);
+            float dirX = (float) Math.sin(radY) * (float) Math.cos(radP);
+            float dirY = (float) Math.sin(radP);
+            float dirZ = (float) Math.cos(radY) * (float) Math.cos(radP);
 
-            if (Math.random() < Math.max(0.20f, 1f - (dist / 60f))) {
-                float dmg = weapon.damage * 0.75f;
-                if (targetIsPlayer) {
-                    player.takeDamage(dmg, pos);
-                } else {
-                    for (PUBGBot other : allBots) {
-                        if (other != this && Math3D.dist(other.pos.x, other.pos.y, other.pos.z, tx, ty, tz) < 1.5f) {
-                            other.takeDamage(dmg, this, player);
-                        }
-                    }
-                }
+            if (!weapon.hideFlash()) {
+                particles.triggerMuzzleFlash(pos.x + dirX * 0.7f, pos.y + 1.4f, pos.z + dirZ * 0.7f);
+            }
+
+            // Выстрел через физический баллистический движок
+            if (ballistics != null) {
+                ballistics.spawnBullet(pos.x, pos.y + 1.4f, pos.z, dirX, dirY, dirZ, weapon, false, this);
             }
         } else if (weapon.ammoInMag <= 0 && weapon.reloadTimer <= 0) {
             weapon.startReload();
@@ -168,38 +179,31 @@ public final class PUBGBot {
         float dist = (float) Math.sqrt(dx * dx + dz * dz);
 
         if (dist > 10f) {
-            float targetYaw = (float) Math.atan2(-dx, dz) * Math3D.TO_DEG;
-            yaw = Math3D.lerp(yaw, targetYaw, dt * 5f);
+            float targetYaw = (float) Math.atan2(dx, dz) * Math3D.TO_DEG;
+            yaw = Math3D.lerpAngle(yaw, targetYaw, dt * 5f);
 
             float rad = yaw * Math3D.TO_RAD;
-            vel.x = -(float) Math.sin(rad) * 4.5f;
-            vel.z = (float) Math.cos(rad) * 4.5f;
+            vel.x = (float) Math.sin(rad) * 4.2f;
+            vel.z = (float) Math.cos(rad) * 4.2f;
         } else {
             vel.x = 0;
             vel.z = 0;
         }
     }
 
-    public void takeDamage(float dmg, PUBGBot attacker, PUBGPlayer player) {
+    public void takeDamage(float dmg, Object attacker, PUBGPlayer player) {
         if (isDead) return;
-        health -= dmg;
+
+        float armorMul = 1.0f - (vestLevel * 0.18f);
+        health -= dmg * armorMul;
 
         if (health <= 0) {
             health = 0;
             isDead = true;
-            if (player != null && attacker == null) {
+            if (attacker == player || attacker == null) {
                 player.kills++;
+                SoundSynth3D.play2D(SoundSynth3D.SOUND_VICTORY, 0.5f);
             }
         }
-    }
-
-    public Math3D.Box getHeadBox() {
-        return new Math3D.Box(pos.x - 0.25f, pos.y + 1.45f, pos.z - 0.25f,
-                              pos.x + 0.25f, pos.y + 1.9f, pos.z + 0.25f);
-    }
-
-    public Math3D.Box getBodyBox() {
-        return new Math3D.Box(pos.x - 0.38f, pos.y, pos.z - 0.38f,
-                              pos.x + 0.38f, pos.y + 1.45f, pos.z + 0.38f);
     }
 }

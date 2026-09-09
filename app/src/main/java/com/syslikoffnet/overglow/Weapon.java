@@ -1,7 +1,11 @@
 package com.syslikoffnet.overglow;
 
 /**
- * Характеристики, баллистика, отдача, перезарядка и анимации оружия.
+ * Фаза 2: Оружие с физическими характеристиками, баллистикой и слотами обвесов.
+ * - Учет начальной скорости пули (Muzzle Velocity: м/с)
+ * - Расчет эффективных характеристик с учетом установленных насадок
+ * - Поддержка пристрелки (Zeroing Distance: 100м, 200м, 300м, 400м, 500м)
+ * - 0 GC Alloc во время стрельбы
  */
 public final class Weapon {
 
@@ -16,26 +20,38 @@ public final class Weapon {
     public static final int ID_GRENADE = 8;
     public static final int TOTAL_WEAPONS = 9;
 
-    // Скины
     public static final int SKIN_DEFAULT = 0;
     public static final int SKIN_GOLD = 1;
     public static final int SKIN_DRAGON = 2;
 
     public final int id;
     public final String name;
-    public final float damage;
+    public final float baseDamage;
     public final float headMultiplier;
-    public final float fireInterval;      // секунды между выстрелами
-    public final int maxMag;
+    public final float fireInterval;
+    public final int baseMaxMag;
     public final int maxReserve;
-    public final float reloadTime;
-    public final float recoilPitch;       // подброс ствола вверх
-    public final float recoilYaw;         // разброс по горизонтали
-    public final float recoilRecovery;    // скорость стабилизации
-    public final float adsZoom;           // кратность прицела (1.0 = без зума, 8.0 = AWM)
+    public final float baseReloadTime;
+    public final float baseRecoilPitch;
+    public final float baseRecoilYaw;
+    public final float baseRecoilRecovery;
+    public final float baseAdsZoom;
     public final boolean isAutomatic;
     public final boolean isMelee;
     public final boolean isProjectile;
+
+    // Баллистические параметры
+    public final float muzzleVelocity; // Начальная скорость пули (м/с)
+    public final float bulletDrag;      // Коэффициент сопротивления воздуха
+    public final float bulletMass;      // Масса пули (грамм)
+    public final int pelletCount;       // Количество дробинок (для дробовика)
+    public final float spreadRadius;    // Базовый конус разброса
+
+    // Пристрелка (Zeroing Distance в метрах)
+    public int zeroingDistance = 100;
+
+    // Слоты модулей
+    public final WeaponAttachment[] attachments = new WeaponAttachment[WeaponAttachment.TOTAL_SLOTS];
 
     // Текущее состояние
     public int ammoInMag;
@@ -44,62 +60,168 @@ public final class Weapon {
     public float reloadTimer = 0;
     public int skin = SKIN_DEFAULT;
 
-    public Weapon(int id, String name, float damage, float headMultiplier, float fireInterval,
-                  int maxMag, int maxReserve, float reloadTime, float recoilPitch,
-                  float recoilYaw, float recoilRecovery, float adsZoom,
+    public Weapon(int id, String name, float baseDamage, float headMultiplier, float fireInterval,
+                  int baseMaxMag, int maxReserve, float baseReloadTime, float baseRecoilPitch,
+                  float baseRecoilYaw, float baseRecoilRecovery, float baseAdsZoom,
+                  float muzzleVelocity, float bulletDrag, float bulletMass, int pelletCount, float spreadRadius,
                   boolean isAutomatic, boolean isMelee, boolean isProjectile) {
         this.id = id;
         this.name = name;
-        this.damage = damage;
+        this.baseDamage = baseDamage;
         this.headMultiplier = headMultiplier;
         this.fireInterval = fireInterval;
-        this.maxMag = maxMag;
+        this.baseMaxMag = baseMaxMag;
         this.maxReserve = maxReserve;
-        this.reloadTime = reloadTime;
-        this.recoilPitch = recoilPitch;
-        this.recoilYaw = recoilYaw;
-        this.recoilRecovery = recoilRecovery;
-        this.adsZoom = adsZoom;
+        this.baseReloadTime = baseReloadTime;
+        this.baseRecoilPitch = baseRecoilPitch;
+        this.baseRecoilYaw = baseRecoilYaw;
+        this.baseRecoilRecovery = baseRecoilRecovery;
+        this.baseAdsZoom = baseAdsZoom;
+        this.muzzleVelocity = muzzleVelocity;
+        this.bulletDrag = bulletDrag;
+        this.bulletMass = bulletMass;
+        this.pelletCount = pelletCount;
+        this.spreadRadius = spreadRadius;
         this.isAutomatic = isAutomatic;
         this.isMelee = isMelee;
         this.isProjectile = isProjectile;
 
-        this.ammoInMag = maxMag;
+        this.ammoInMag = baseMaxMag;
         this.ammoReserve = maxReserve;
     }
 
     public static Weapon create(int id) {
         switch (id) {
-            case ID_AKR:
-                return new Weapon(ID_AKR, "AKR-12", 36f, 3.5f, 0.10f,
-                        30, 120, 2.2f, 1.8f, 0.9f, 6.0f, 1.3f, true, false, false);
-            case ID_M4:
-                return new Weapon(ID_M4, "M4A1-S", 32f, 3.3f, 0.088f,
-                        30, 120, 2.0f, 1.2f, 0.6f, 7.5f, 1.35f, true, false, false);
-            case ID_AWM:
-                return new Weapon(ID_AWM, "AWM Dragon", 120f, 4.0f, 1.25f,
-                        5, 30, 3.0f, 4.5f, 1.5f, 3.5f, 6.0f, false, false, false);
-            case ID_DEAGLE:
-                return new Weapon(ID_DEAGLE, "Desert Eagle", 54f, 3.8f, 0.22f,
-                        7, 35, 1.8f, 3.0f, 1.2f, 5.0f, 1.2f, false, false, false);
-            case ID_MP5:
-                return new Weapon(ID_MP5, "MP5 Tactical", 24f, 3.0f, 0.072f,
-                        30, 150, 1.7f, 1.0f, 0.5f, 8.0f, 1.25f, true, false, false);
-            case ID_SHOTGUN:
-                return new Weapon(ID_SHOTGUN, "SPAS-12", 18f /* x8 дробинок = 144 */, 2.5f, 0.65f,
-                        6, 36, 2.6f, 4.0f, 2.2f, 4.0f, 1.15f, false, false, false);
-            case ID_RPG:
-                return new Weapon(ID_RPG, "RPG-7", 220f, 1.0f, 1.8f,
-                        1, 5, 3.4f, 6.0f, 2.0f, 3.0f, 1.4f, false, false, true);
-            case ID_KNIFE:
-                return new Weapon(ID_KNIFE, "Karambit Gold", 75f, 2.0f, 0.40f,
-                        1, 1, 0.1f, 0.5f, 0.2f, 10f, 1.0f, false, true, false);
-            case ID_GRENADE:
-                return new Weapon(ID_GRENADE, "HE Grenade", 160f, 1.0f, 1.0f,
-                        1, 4, 1.2f, 1.0f, 0.5f, 8f, 1.0f, false, false, true);
+            case ID_M4: // M416 (5.56mm NATO)
+                Weapon m4 = new Weapon(ID_M4, "M416 Tactical", 41f, 2.35f, 0.086f,
+                        30, 150, 2.1f, 1.35f, 0.65f, 7.8f, 1.25f,
+                        880f, 0.0018f, 4.0f, 1, 0.015f, true, false, false);
+                m4.attach(WeaponAttachment.create(WeaponAttachment.ID_SCOPE_RED_DOT));
+                return m4;
+
+            case ID_AKR: // AKM (7.62x39mm)
+                return new Weapon(ID_AKR, "AKM Heavy", 48f, 2.35f, 0.100f,
+                        30, 150, 2.3f, 1.95f, 0.95f, 5.8f, 1.20f,
+                        715f, 0.0022f, 7.9f, 1, 0.022f, true, false, false);
+
+            case ID_AWM: // AWM (.300 Winchester Magnum)
+                Weapon awm = new Weapon(ID_AWM, "AWM Magnum", 132f, 2.50f, 1.35f,
+                        5, 25, 3.2f, 4.8f, 1.4f, 3.2f, 8.0f,
+                        910f, 0.0012f, 19.0f, 1, 0.001f, false, false, false);
+                awm.attach(WeaponAttachment.create(WeaponAttachment.ID_SCOPE_8X));
+                awm.attach(WeaponAttachment.create(WeaponAttachment.ID_STOCK_CHEEKPAD));
+                return awm;
+
+            case ID_DEAGLE: // Desert Eagle (.45 ACP / .50 AE)
+                return new Weapon(ID_DEAGLE, "Desert Eagle", 62f, 2.2f, 0.22f,
+                        7, 35, 1.8f, 3.2f, 1.2f, 4.5f, 1.15f,
+                        470f, 0.0035f, 15.0f, 1, 0.035f, false, false, false);
+
+            case ID_MP5: // MP5K (9mm Luger)
+                return new Weapon(ID_MP5, "MP5K Submachine", 33f, 1.8f, 0.068f,
+                        30, 180, 1.8f, 0.95f, 0.45f, 8.5f, 1.20f,
+                        400f, 0.0028f, 8.0f, 1, 0.025f, true, false, false);
+
+            case ID_SHOTGUN: // SPAS-12 (12 Gauge Buckshot - 9 дробинок по 22 урона)
+                return new Weapon(ID_SHOTGUN, "S1897 Shotgun", 24f, 1.5f, 0.75f,
+                        5, 30, 2.8f, 4.5f, 2.5f, 3.8f, 1.10f,
+                        360f, 0.0065f, 32.0f, 9, 0.085f, false, false, false);
+
+            case ID_RPG: // RPG-7 Rocket
+                return new Weapon(ID_RPG, "RPG-7 Rocket", 240f, 1.0f, 2.2f,
+                        1, 4, 3.8f, 6.5f, 2.0f, 2.5f, 1.3f,
+                        115f, 0.0005f, 2500f, 1, 0.010f, false, false, true);
+
+            case ID_KNIFE: // Pan / Melee
+                return new Weapon(ID_KNIFE, "Crowbar / Pan", 80f, 2.0f, 0.45f,
+                        1, 1, 0.1f, 0.5f, 0.2f, 10f, 1.0f,
+                        0f, 0f, 0f, 1, 0f, false, true, false);
+
+            case ID_GRENADE: // HE Frag
+                return new Weapon(ID_GRENADE, "Frag Grenade", 180f, 1.0f, 1.2f,
+                        1, 3, 1.0f, 1.0f, 0.5f, 8f, 1.0f,
+                        28f, 0.004f, 400f, 1, 0f, false, false, true);
+
             default:
-                return create(ID_AKR);
+                return create(ID_M4);
         }
+    }
+
+    public void attach(WeaponAttachment att) {
+        if (att != null && att.slot >= 0 && att.slot < TOTAL_SLOTS) {
+            attachments[att.slot] = att;
+        }
+    }
+
+    public void detach(int slot) {
+        if (slot >= 0 && slot < TOTAL_SLOTS) {
+            attachments[slot] = null;
+        }
+    }
+
+    public int getMaxMag() {
+        int cap = baseMaxMag;
+        if (attachments[WeaponAttachment.SLOT_MAGAZINE] != null) {
+            cap += attachments[WeaponAttachment.SLOT_MAGAZINE].magCapacityBonus;
+        }
+        return cap;
+    }
+
+    public float getReloadTime() {
+        float t = baseReloadTime;
+        if (attachments[WeaponAttachment.SLOT_MAGAZINE] != null) {
+            t *= attachments[WeaponAttachment.SLOT_MAGAZINE].reloadTimeMul;
+        }
+        return t;
+    }
+
+    public float getRecoilPitch() {
+        float p = baseRecoilPitch;
+        for (WeaponAttachment a : attachments) {
+            if (a != null) p *= a.recoilVertMul;
+        }
+        return p;
+    }
+
+    public float getRecoilYaw() {
+        float y = baseRecoilYaw;
+        for (WeaponAttachment a : attachments) {
+            if (a != null) y *= a.recoilHorizMul;
+        }
+        return y;
+    }
+
+    public float getRecoilRecovery() {
+        float r = baseRecoilRecovery;
+        for (WeaponAttachment a : attachments) {
+            if (a != null) r *= a.recoilRecoveryMul;
+        }
+        return r;
+    }
+
+    public float getAdsZoom() {
+        if (attachments[WeaponAttachment.SLOT_SCOPE] != null) {
+            return attachments[WeaponAttachment.SLOT_SCOPE].adsZoom;
+        }
+        return baseAdsZoom;
+    }
+
+    public boolean isSilenced() {
+        return attachments[WeaponAttachment.SLOT_MUZZLE] != null &&
+               attachments[WeaponAttachment.SLOT_MUZZLE].isSilenced;
+    }
+
+    public boolean hideFlash() {
+        return attachments[WeaponAttachment.SLOT_MUZZLE] != null &&
+               attachments[WeaponAttachment.SLOT_MUZZLE].hideFlash;
+    }
+
+    public void cycleZeroing() {
+        if (zeroingDistance == 100) zeroingDistance = 200;
+        else if (zeroingDistance == 200) zeroingDistance = 300;
+        else if (zeroingDistance == 300) zeroingDistance = 400;
+        else if (zeroingDistance == 400) zeroingDistance = 500;
+        else zeroingDistance = 100;
     }
 
     public void update(float dt) {
@@ -107,8 +229,7 @@ public final class Weapon {
         if (reloadTimer > 0) {
             reloadTimer -= dt;
             if (reloadTimer <= 0) {
-                // Завершение перезарядки
-                int needed = maxMag - ammoInMag;
+                int needed = getMaxMag() - ammoInMag;
                 int take = Math.min(needed, ammoReserve);
                 ammoInMag += take;
                 ammoReserve -= take;
@@ -122,8 +243,9 @@ public final class Weapon {
     }
 
     public void startReload() {
-        if (isMelee || reloadTimer > 0 || ammoInMag >= maxMag || ammoReserve <= 0) return;
-        reloadTimer = reloadTime;
+        if (isMelee || reloadTimer > 0 || ammoInMag >= getMaxMag() || ammoReserve <= 0) return;
+        reloadTimer = getReloadTime();
+        SoundSynth3D.play2D(SoundSynth3D.SOUND_RELOAD, 0.8f);
     }
 
     public Mesh getMesh() {
@@ -137,7 +259,7 @@ public final class Weapon {
             case ID_RPG: return ModelGenerator.rpgMesh;
             case ID_KNIFE: return ModelGenerator.knifeMesh;
             case ID_GRENADE: return ModelGenerator.grenadeMesh;
-            default: return ModelGenerator.akrMesh;
+            default: return ModelGenerator.m4Mesh;
         }
     }
 
