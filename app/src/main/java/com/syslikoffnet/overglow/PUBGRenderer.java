@@ -5,16 +5,16 @@ import java.util.ArrayList;
 
 /**
  * 3D Рендерер высокого качества для PUBG Mobile:
+ * - Шейдеры Blinn-Phong со зеркальными бликами и контурным светом (Rim Light)
  * - Высокодетализированный персонаж: Шлем 3 уровня (Алтын с забралом), Броня 3 уровня, Рюкзак, Сковорода на поясе
  * - Транспорт: 3D Багги и УАЗ с 4 независимыми крутящимися колесами
  * - Мир: 2-этажные дома с двускатными крышами и открывающимися дверями, сосны, камни
  * - Грузовой самолет C-130 с 4 двигателями, Аирдроп с синим брезентом и парашютом
- * - 3D Оружие (M416, AKM, AWM, Сковорода) и аптечки на полу
  */
 public final class PUBGRenderer {
 
     private int prog3D;
-    private int uMVP3D, uModel3D, uLightDir3D, uMuzzlePos3D, uMuzzleInt3D, uTex3D, uColor3D;
+    private int uMVP3D, uModel3D, uEyePos3D, uLightDir3D, uMuzzlePos3D, uMuzzleInt3D, uTex3D, uColor3D;
     private int uFogColor3D, uFogStart3D, uFogEnd3D;
     private int aPos3D, aNorm3D, aUV3D;
 
@@ -33,6 +33,7 @@ public final class PUBGRenderer {
 
         uMVP3D = GLES20.glGetUniformLocation(prog3D, "uMVP");
         uModel3D = GLES20.glGetUniformLocation(prog3D, "uModel");
+        uEyePos3D = GLES20.glGetUniformLocation(prog3D, "uEyePos");
         uLightDir3D = GLES20.glGetUniformLocation(prog3D, "uLightDir");
         uMuzzlePos3D = GLES20.glGetUniformLocation(prog3D, "uMuzzlePos");
         uMuzzleInt3D = GLES20.glGetUniformLocation(prog3D, "uMuzzleIntensity");
@@ -62,10 +63,6 @@ public final class PUBGRenderer {
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
 
         GLES20.glUseProgram(prog3D);
-        GLES20.glUniform3f(uLightDir3D, -0.6f, -0.8f, -0.4f);
-        GLES20.glUniform3f(uFogColor3D, 0.46f, 0.68f, 0.88f);
-        GLES20.glUniform1f(uFogStart3D, 80f);
-        GLES20.glUniform1f(uFogEnd3D, 420f);
 
         // Проекция
         float fov = 75f - (player.adsFactor * 25f);
@@ -102,10 +99,21 @@ public final class PUBGRenderer {
 
         viewMat.lookAt(eye, target, new Math3D.Vec3(0, 1, 0));
 
+        // Юниформы освещения и камеры
+        GLES20.glUniform3f(uEyePos3D, eye.x, eye.y, eye.z);
+        GLES20.glUniform3f(uLightDir3D, -0.6f, -0.8f, -0.4f);
+        GLES20.glUniform3f(uFogColor3D, 0.46f, 0.68f, 0.88f);
+        GLES20.glUniform1f(uFogStart3D, 80f);
+        GLES20.glUniform1f(uFogEnd3D, 420f);
+
+        // Вспышка выстрела
+        GLES20.glUniform3f(uMuzzlePos3D, particles.muzzleFlashPos.x, particles.muzzleFlashPos.y, particles.muzzleFlashPos.z);
+        GLES20.glUniform1f(uMuzzleInt3D, particles.muzzleFlashIntensity);
+
         // 1. Земля (Трава Эрангеля)
         drawMesh(ModelGenerator.groundMesh, GLUtil.texGrass, 0, 0, 0, 1f, 1f, 1f, 0, 1f, 1f, 1f, 1f);
 
-        // 2. Дома в Починках и здания
+        // 2. Дома в Починках (Стены + Черепичные крыши)
         for (PUBGMap.Obstacle obs : map.obstacles) {
             drawMesh(ModelGenerator.boxMesh, obs.texture,
                     obs.getCenterX(), obs.getCenterY(), obs.getCenterZ(),
@@ -124,7 +132,7 @@ public final class PUBGRenderer {
         // 4. Деревья вокруг карты
         for (int x = -160; x <= 160; x += 40) {
             for (int z = -160; z <= 160; z += 40) {
-                if (Math.abs(x) > 50 || Math.abs(z) > 50) { // вне Починок
+                if (Math.abs(x) > 50 || Math.abs(z) > 50) {
                     drawMesh(ModelGenerator.treeMesh, GLUtil.texGrass, x + (z % 15), 0, z + (x % 15), 1.2f, 1.2f, 1.2f, 0, 1f, 1f, 1f, 1f);
                 }
             }
@@ -179,37 +187,29 @@ public final class PUBGRenderer {
     private void renderSoldier3D(float x, float y, float z, float yaw, float pitch,
                                  int uniformTex, int helmetLv, int vestLv, int backpackLv,
                                  boolean hasPan, Weapon wep) {
-        // Торс в камуфляже
         drawMeshRotated(ModelGenerator.soldierTorsoMesh, uniformTex, x, y + 0.88f, z, 1f, 1f, 1f, yaw, 0);
 
-        // Бронежилет 3 уровня с подсумками
         if (vestLv > 0) {
             drawMeshRotated(ModelGenerator.vest3Mesh, GLUtil.texMetal, x, y + 0.92f, z, 1f, 1f, 1f, yaw, 0);
         }
 
-        // Рюкзак 3 уровня на спине
         if (backpackLv > 0) {
             drawMeshRotated(ModelGenerator.backpack3Mesh, GLUtil.texVehicle, x, y + 0.90f, z, 1f, 1f, 1f, yaw, 0);
         }
 
-        // Сковорода на пояснице (защита от пуль)
         if (hasPan) {
             drawMeshRotated(ModelGenerator.panMesh, GLUtil.texMetal, x, y + 0.55f, z - 0.22f, 1f, 1f, 1f, yaw + 180f, 45f);
         }
 
-        // Голова
         drawMeshRotated(ModelGenerator.soldierHeadMesh, GLUtil.texWeaponDark, x, y + 1.55f, z, 1f, 1f, 1f, yaw, pitch);
 
-        // Шлем 3 уровня (Алтын с забралом)
         if (helmetLv > 0) {
             drawMeshRotated(ModelGenerator.helmet3Mesh, GLUtil.texMetal, x, y + 1.62f, z, 1f, 1f, 1f, yaw, pitch);
         }
 
-        // Ноги с наколенниками и берцами
         drawMeshRotated(ModelGenerator.soldierLegMesh, uniformTex, x - 0.16f, y + 0.38f, z, 1f, 1f, 1f, yaw, 0);
         drawMeshRotated(ModelGenerator.soldierLegMesh, uniformTex, x + 0.16f, y + 0.38f, z, 1f, 1f, 1f, yaw, 0);
 
-        // Оружие в руках бойца
         if (wep != null) {
             Mesh wMesh = (wep.id == Weapon.ID_AWM) ? ModelGenerator.awmMesh :
                          ((wep.id == Weapon.ID_AKR) ? ModelGenerator.akmMesh : ModelGenerator.m416Mesh);
@@ -222,7 +222,6 @@ public final class PUBGRenderer {
         Mesh bodyMesh = (v.type == Vehicle3D.TYPE_BUGGY) ? ModelGenerator.buggyBodyMesh : ModelGenerator.uazBodyMesh;
         drawMeshRotated(bodyMesh, GLUtil.texVehicle, v.pos.x, v.pos.y, v.pos.z, 1f, 1f, 1f, v.yaw, 0);
 
-        // 4 отдельных 3D колеса с анимацией вращения
         float fw = (v.type == Vehicle3D.TYPE_BUGGY) ? 0.85f : 0.95f;
         float fd = (v.type == Vehicle3D.TYPE_BUGGY) ? 1.25f : 1.45f;
         float wheelY = v.pos.y + 0.42f;
