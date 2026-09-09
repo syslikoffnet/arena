@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- неоновое кольцо -->
+    <path
+        android:strokeColor="#FF4F8CFF"
+        android:strokeWidth="3"
+        android:fillColor="#00000000"
+        android:pathData="M54,54m-26,0a26,26 0,1 1,52 0a26,26 0,1 1,-52 0" />
+    <!-- молния -->
+    <path
+        android:fillColor="#FF7DE2FF"
+        android:pathData="M58,34L44,57h9l-4,17 17,-25h-10z" />
+</vector>
