@@ -6,19 +6,19 @@ import javax.microedition.khronos.egl.EGLConfig;
 import javax.microedition.khronos.opengles.GL10;
 
 /**
- * GLSurfaceView для 3D графики OpenGL ES 2.0.
+ * GLSurfaceView для 3D графики PUBG Mobile (OpenGL ES 2.0).
  */
 public final class GLView extends GLSurfaceView implements GLSurfaceView.Renderer {
 
-    public final FPSGame game;
-    public final Renderer3D renderer3D;
+    public final PUBGGame game;
+    public final PUBGRenderer renderer3D;
 
     private long lastTimeNanos;
 
-    public GLView(Context context, FPSGame game) {
+    public GLView(Context context, PUBGGame game) {
         super(context);
         this.game = game;
-        this.renderer3D = new Renderer3D();
+        this.renderer3D = new PUBGRenderer();
 
         setEGLContextClientVersion(2);
         setRenderer(this);

@@ -8,12 +8,12 @@ import android.view.WindowManager;
 import android.widget.FrameLayout;
 
 /**
- * Главная Активити: полноэкранный режим (Immersive Fullscreen),
- * интеграция 3D OpenGL ES рендерера и 2D тактического HUD оверлея.
+ * Главная Активити PUBG Mobile: полноэкранный ландшафтный режим,
+ * 3D рендерер OpenGL ES и 2D оверлей интерфейса.
  */
 public class GameActivity extends Activity {
 
-    private FPSGame game;
+    private PUBGGame game;
     private GLView glView;
     private HUDOverlayView hudView;
 
@@ -22,7 +22,7 @@ public class GameActivity extends Activity {
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-        game = new FPSGame(this);
+        game = new PUBGGame(this);
         glView = new GLView(this, game);
         hudView = new HUDOverlayView(this, game);
 
@@ -48,9 +48,6 @@ public class GameActivity extends Activity {
     @Override
     protected void onPause() {
         if (glView != null) glView.onPause();
-        if (game != null && game.state == FPSGame.STATE_PLAYING) {
-            game.state = FPSGame.STATE_PAUSE;
-        }
         super.onPause();
     }
 
@@ -73,13 +70,8 @@ public class GameActivity extends Activity {
             return;
         }
 
-        if (game.state == FPSGame.STATE_PLAYING) {
-            game.state = FPSGame.STATE_PAUSE;
-        } else if (game.state == FPSGame.STATE_PAUSE ||
-                   game.state == FPSGame.STATE_INVENTORY ||
-                   game.state == FPSGame.STATE_SETTINGS ||
-                   game.state == FPSGame.STATE_END) {
-            game.state = FPSGame.STATE_MENU;
+        if (game.state == PUBGGame.STATE_PLAYING) {
+            game.state = PUBGGame.STATE_LOBBY;
         } else {
             super.onBackPressed();
         }

@@ -6,14 +6,13 @@ import android.view.MotionEvent;
 import android.view.View;
 
 /**
- * Аппаратно-ускоренный оверлей для 2D тактического интерфейса (HUD),
- * миникарты, прицелов и обработки мультикасаний.
+ * Аппаратно-ускоренный 2D оверлей интерфейса PUBG Mobile (HUD, Лобби, Кнопки).
  */
 public final class HUDOverlayView extends View {
 
-    public final FPSGame game;
+    public final PUBGGame game;
 
-    public HUDOverlayView(Context context, FPSGame game) {
+    public HUDOverlayView(Context context, PUBGGame game) {
         super(context);
         this.game = game;
         setFocusable(true);
@@ -28,7 +27,7 @@ public final class HUDOverlayView extends View {
         if (w > 0 && h > 0) {
             game.render2D(canvas, w, h);
         }
-        invalidate(); // плавные 60/120 кадров оверлея
+        invalidate();
     }
 
     @Override

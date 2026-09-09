@@ -64,11 +64,11 @@ public final class ParticleSystem {
             this.damage = damage;
             this.radius = radius;
             this.ownerId = ownerId;
-            if (type == 0) maxLife = 4.0f; // RPG
-            else maxLife = 2.4f;           // Grenade
+            if (type == 0) maxLife = 4.0f;
+            else maxLife = 2.4f;
         }
 
-        public boolean update(float dt, Map3D map) {
+        public boolean update(float dt, PUBGMap map) {
             life += dt;
             if (life >= maxLife) {
                 exploded = true;
@@ -79,14 +79,12 @@ public final class ParticleSystem {
             y += vy * dt;
             z += vz * dt;
 
-            // Гравитация (для гранат сильнее)
             if (type == 1) {
                 vy -= 14.0f * dt;
             } else {
-                vy -= 1.5f * dt; // RPG летит почти прямо
+                vy -= 1.5f * dt;
             }
 
-            // Коллизии с землей
             if (y < 0.2f) {
                 y = 0.2f;
                 if (type == 1) {
@@ -99,15 +97,16 @@ public final class ParticleSystem {
                 }
             }
 
-            // Коллизии с препятствиями
-            for (Map3D.Obstacle obs : map.obstacles) {
-                if (obs.box.contains(x, y, z)) {
-                    if (type == 1) {
-                        vx = -vx * 0.5f;
-                        vz = -vz * 0.5f;
-                    } else {
-                        exploded = true;
-                        return false;
+            if (map != null) {
+                for (PUBGMap.Obstacle obs : map.obstacles) {
+                    if (obs.box.contains(x, y, z)) {
+                        if (type == 1) {
+                            vx = -vx * 0.5f;
+                            vz = -vz * 0.5f;
+                        } else {
+                            exploded = true;
+                            return false;
+                        }
                     }
                 }
             }
@@ -119,11 +118,10 @@ public final class ParticleSystem {
     public final ArrayList<Tracer> tracers = new ArrayList<>();
     public final ArrayList<Projectile> projectiles = new ArrayList<>();
 
-    // Динамическая позиция и интенсивность дульной вспышки
     public final Math3D.Vec3 muzzleFlashPos = new Math3D.Vec3();
     public float muzzleFlashIntensity = 0f;
 
-    public void update(float dt, Map3D map) {
+    public void update(float dt, PUBGMap map) {
         if (muzzleFlashIntensity > 0) {
             muzzleFlashIntensity = Math.max(0, muzzleFlashIntensity - dt * 14f);
         }
@@ -193,7 +191,6 @@ public final class ParticleSystem {
     }
 
     public void spawnExplosion(float x, float y, float z) {
-        // Огненное ядро
         for (int i = 0; i < 40; i++) {
             Particle p = new Particle();
             p.x = x; p.y = y; p.z = z;
@@ -207,7 +204,6 @@ public final class ParticleSystem {
             p.gravity = false;
             particles.add(p);
         }
-        // Дым
         for (int i = 0; i < 25; i++) {
             Particle p = new Particle();
             p.x = x; p.y = y; p.z = z;
