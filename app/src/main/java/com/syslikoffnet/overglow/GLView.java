@@ -7,6 +7,7 @@ import javax.microedition.khronos.opengles.GL10;
 
 /**
  * GLSurfaceView для 3D графики PUBG Mobile (OpenGL ES 2.0).
+ * Рендерит 3D мир в матче и 3D персонажа на подиуме в лобби.
  */
 public final class GLView extends GLSurfaceView implements GLSurfaceView.Renderer {
 

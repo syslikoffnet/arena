@@ -16,13 +16,12 @@ import java.nio.FloatBuffer;
 import java.nio.ShortBuffer;
 
 /**
- * Утилиты OpenGL ES 2.0: компиляция шейдеров, буферы, процедурные HD-текстуры.
+ * Утилиты OpenGL ES 2.0: компиляция шейдеров, буферы, высокодетализированные HD-текстуры PUBG Mobile.
  */
 public final class GLUtil {
 
     private GLUtil() {}
 
-    // Шейдер для 3D геометрии (свет, текстура, туман, вспышки выстрела)
     public static final String VS_3D =
             "uniform mat4 uMVP;\n" +
             "uniform mat4 uModel;\n" +
@@ -41,10 +40,10 @@ public final class GLUtil {
             "    vUV = aUV;\n" +
             "    vec3 norm = normalize((uModel * vec4(aNorm, 0.0)).xyz);\n" +
             "    float diff = max(dot(norm, -uLightDir), 0.0);\n" +
-            "    float ambient = 0.42;\n" +
+            "    float ambient = 0.44;\n" +
             "    float muzzleDist = length(worldPos.xyz - uMuzzlePos);\n" +
             "    float muzzleLight = (uMuzzleIntensity / (1.0 + muzzleDist * muzzleDist * 0.15));\n" +
-            "    vLight = ambient + diff * 0.58 + muzzleLight;\n" +
+            "    vLight = ambient + diff * 0.56 + muzzleLight;\n" +
             "    vFogDist = length(worldPos.xyz);\n" +
             "}\n";
 
@@ -62,28 +61,8 @@ public final class GLUtil {
             "    vec4 texColor = texture2D(uTex, vUV) * uColor;\n" +
             "    vec3 litColor = texColor.rgb * vLight;\n" +
             "    float fogFactor = clamp((vFogDist - uFogStart) / (uFogEnd - uFogStart), 0.0, 1.0);\n" +
-            "    vec3 finalColor = mix(litColor, uFogColor, fogFactor * 0.75);\n" +
+            "    vec3 finalColor = mix(litColor, uFogColor, fogFactor * 0.65);\n" +
             "    gl_FragColor = vec4(finalColor, texColor.a);\n" +
-            "}\n";
-
-    // Шейдер для 2D UI / частиц / прицелов
-    public static final String VS_2D =
-            "uniform mat4 uMVP;\n" +
-            "attribute vec3 aPos;\n" +
-            "attribute vec2 aUV;\n" +
-            "varying vec2 vUV;\n" +
-            "void main() {\n" +
-            "    gl_Position = uMVP * vec4(aPos, 1.0);\n" +
-            "    vUV = aUV;\n" +
-            "}\n";
-
-    public static final String FS_2D =
-            "precision mediump float;\n" +
-            "uniform sampler2D uTex;\n" +
-            "uniform vec4 uColor;\n" +
-            "varying vec2 vUV;\n" +
-            "void main() {\n" +
-            "    gl_FragColor = texture2D(uTex, vUV) * uColor;\n" +
             "}\n";
 
     public static int createProgram(String vsSource, String fsSource) {
@@ -128,7 +107,7 @@ public final class GLUtil {
     }
 
     // =========================================================================
-    // Текстуры игры (генерируются процедурно при старте)
+    // Текстуры игры
     // =========================================================================
     public static int texSandstone;
     public static int texConcrete;
@@ -140,8 +119,11 @@ public final class GLUtil {
     public static int texPlayerT;
     public static int texPlayerCT;
     public static int texParticle;
-    public static int texScope;
     public static int texWhite;
+    public static int texGrass;
+    public static int texRoof;
+    public static int texAirdropTarp;
+    public static int texVehicle;
 
     public static void initTextures() {
         texWhite = loadBitmapTexture(genSolidBitmap(16, 16, 0xFFFFFFFF));
@@ -152,10 +134,13 @@ public final class GLUtil {
         texWeaponDark = loadBitmapTexture(genWeaponDarkBitmap());
         texWeaponGold = loadBitmapTexture(genWeaponGoldBitmap());
         texWeaponDragon = loadBitmapTexture(genWeaponDragonBitmap());
-        texPlayerT = loadBitmapTexture(genPlayerTBitmap());
-        texPlayerCT = loadBitmapTexture(genPlayerCTBitmap());
+        texPlayerT = loadBitmapTexture(genCamoBitmap(0xFF33691E, 0xFF1B5E20, 0xFF3E2723)); // Woodland Camo
+        texPlayerCT = loadBitmapTexture(genCamoBitmap(0xFF263238, 0xFF37474F, 0xFF102027)); // Urban SWAT Camo
+        texGrass = loadBitmapTexture(genGrassBitmap());
+        texRoof = loadBitmapTexture(genRoofBitmap());
+        texAirdropTarp = loadBitmapTexture(genAirdropTarpBitmap());
+        texVehicle = loadBitmapTexture(genVehicleBitmap());
         texParticle = loadBitmapTexture(genParticleBitmap());
-        texScope = loadBitmapTexture(genScopeBitmap());
     }
 
     private static int loadBitmapTexture(Bitmap bmp) {
@@ -178,28 +163,91 @@ public final class GLUtil {
         return bmp;
     }
 
+    private static Bitmap genGrassBitmap() {
+        int S = 256;
+        Bitmap bmp = Bitmap.createBitmap(S, S, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(bmp);
+        c.drawColor(0xFF4C7835); // Трава Эрангеля
+        Paint p = new Paint();
+        p.setColor(0xFF385E24);
+        for (int i = 0; i < 800; i++) {
+            float rx = (float) (Math.random() * S);
+            float ry = (float) (Math.random() * S);
+            c.drawLine(rx, ry, rx + (float)(Math.random() * 4 - 2), ry + (float)(Math.random() * 8 + 4), p);
+        }
+        return bmp;
+    }
+
+    private static Bitmap genRoofBitmap() {
+        int S = 256;
+        Bitmap bmp = Bitmap.createBitmap(S, S, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(bmp);
+        c.drawColor(0xFF8D3C28); // Красная черепица
+        Paint p = new Paint();
+        p.setColor(0xFF5C2415);
+        p.setStrokeWidth(4);
+        for (int y = 0; y < S; y += 32) {
+            c.drawLine(0, y, S, y, p);
+            int off = (y / 32) % 2 == 0 ? 0 : 24;
+            for (int x = off; x < S; x += 48) {
+                c.drawLine(x, y, x, y + 32, p);
+            }
+        }
+        return bmp;
+    }
+
+    private static Bitmap genAirdropTarpBitmap() {
+        int S = 256;
+        Bitmap bmp = Bitmap.createBitmap(S, S, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(bmp);
+        c.drawColor(0xFF0D47A1); // Синий брезент аирдропа
+        Paint p = new Paint();
+        p.setColor(0xFF1976D2);
+        p.setStrokeWidth(6);
+        c.drawLine(0, 0, S, S, p);
+        c.drawLine(0, S, S, 0, p);
+        return bmp;
+    }
+
+    private static Bitmap genVehicleBitmap() {
+        int S = 256;
+        Bitmap bmp = Bitmap.createBitmap(S, S, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(bmp);
+        c.drawColor(0xFF2E4033); // Армейский темно-зеленый
+        Paint p = new Paint();
+        p.setColor(0xFF1B261E);
+        p.setStrokeWidth(6);
+        c.drawRect(8, 8, S - 8, S - 8, p);
+        return bmp;
+    }
+
+    private static Bitmap genCamoBitmap(int c1, int c2, int c3) {
+        int S = 256;
+        Bitmap bmp = Bitmap.createBitmap(S, S, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(bmp);
+        c.drawColor(c1);
+        Paint p = new Paint();
+        p.setStyle(Paint.Style.FILL);
+        for (int i = 0; i < 40; i++) {
+            p.setColor(i % 2 == 0 ? c2 : c3);
+            float rx = (float) (Math.random() * S);
+            float ry = (float) (Math.random() * S);
+            float rw = (float) (Math.random() * 45 + 20);
+            float rh = (float) (Math.random() * 45 + 20);
+            c.drawOval(new RectF(rx, ry, rx + rw, ry + rh), p);
+        }
+        return bmp;
+    }
+
     private static Bitmap genSandstoneBitmap() {
         int S = 256;
         Bitmap bmp = Bitmap.createBitmap(S, S, Bitmap.Config.ARGB_8888);
         Canvas c = new Canvas(bmp);
-        c.drawColor(0xFFD4B184); // Песчаник Dust2
+        c.drawColor(0xFF5A7E3E); // Полевой грунт с травой
         Paint p = new Paint();
-        p.setColor(0xFFB89366);
-        p.setStrokeWidth(3);
-        // Кирпичные швы
-        for (int y = 0; y < S; y += 32) {
-            c.drawLine(0, y, S, y, p);
-            int off = (y / 32) % 2 == 0 ? 0 : 32;
-            for (int x = off; x < S; x += 64) {
-                c.drawLine(x, y, x, y + 32, p);
-            }
-        }
-        // Шум/текстура
-        p.setColor(0x22000000);
-        for (int i = 0; i < 400; i++) {
-            float rx = (float) (Math.random() * S);
-            float ry = (float) (Math.random() * S);
-            c.drawCircle(rx, ry, (float) (Math.random() * 2 + 1), p);
+        p.setColor(0xFF486730);
+        for (int i = 0; i < 500; i++) {
+            c.drawCircle((float) (Math.random() * S), (float) (Math.random() * S), (float) (Math.random() * 3), p);
         }
         return bmp;
     }
@@ -208,16 +256,16 @@ public final class GLUtil {
         int S = 256;
         Bitmap bmp = Bitmap.createBitmap(S, S, Bitmap.Config.ARGB_8888);
         Canvas c = new Canvas(bmp);
-        c.drawColor(0xFF7A8288);
+        c.drawColor(0xFFCED2D5); // Белая штукатурка домов Починок
         Paint p = new Paint();
-        p.setColor(0xFF555C62);
-        p.setStrokeWidth(2);
-        c.drawLine(0, 0, S, S, p);
-        c.drawLine(0, S, S, 0, p);
-        p.setColor(0x28000000);
-        for (int i = 0; i < 600; i++) {
-            c.drawCircle((float) (Math.random() * S), (float) (Math.random() * S), (float) (Math.random() * 2), p);
-        }
+        p.setColor(0xFF8F9498);
+        p.setStrokeWidth(3);
+        p.setStyle(Paint.Style.STROKE);
+        // Оконные рамы
+        c.drawRect(24, 24, 100, 100, p);
+        c.drawLine(62, 24, 62, 100, p);
+        c.drawRect(156, 24, 232, 100, p);
+        c.drawLine(194, 24, 194, 100, p);
         return bmp;
     }
 
@@ -225,20 +273,16 @@ public final class GLUtil {
         int S = 256;
         Bitmap bmp = Bitmap.createBitmap(S, S, Bitmap.Config.ARGB_8888);
         Canvas c = new Canvas(bmp);
-        c.drawColor(0xFF8B5A2B); // Деревянный ящик
+        c.drawColor(0xFF6D4C41); // Темное дерево дверей
         Paint p = new Paint();
-        p.setColor(0xFF5C3A1E);
-        p.setStrokeWidth(8);
-        p.setStyle(Paint.Style.STROKE);
-        c.drawRect(4, 4, S - 4, S - 4, p);
-        c.drawLine(8, 8, S - 8, S - 8, p);
-        c.drawLine(8, S - 8, S - 8, 8, p);
-        p.setStyle(Paint.Style.FILL);
-        p.setColor(0xFF3B2513);
-        c.drawCircle(16, 16, 4, p);
-        c.drawCircle(S - 16, 16, 4, p);
-        c.drawCircle(16, S - 16, 4, p);
-        c.drawCircle(S - 16, S - 16, 4, p);
+        p.setColor(0xFF3E2723);
+        p.setStrokeWidth(6);
+        for (int x = 0; x < S; x += 32) {
+            c.drawLine(x, 0, x, S, p);
+        }
+        // Дверная ручка
+        p.setColor(0xFFFFD700);
+        c.drawCircle(S - 36, S / 2f, 10, p);
         return bmp;
     }
 
@@ -246,17 +290,12 @@ public final class GLUtil {
         int S = 256;
         Bitmap bmp = Bitmap.createBitmap(S, S, Bitmap.Config.ARGB_8888);
         Canvas c = new Canvas(bmp);
-        c.drawColor(0xFF333A42);
+        c.drawColor(0xFF263238); // Оружейная сталь
         Paint p = new Paint();
-        p.setColor(0xFF22262B);
+        p.setColor(0xFF37474F);
         p.setStrokeWidth(4);
-        for (int x = 0; x < S; x += 64) {
+        for (int x = 0; x < S; x += 48) {
             c.drawLine(x, 0, x, S, p);
-        }
-        p.setColor(0xFF55606E);
-        p.setStrokeWidth(2);
-        for (int y = 0; y < S; y += 64) {
-            c.drawLine(0, y, S, y, p);
         }
         return bmp;
     }
@@ -265,12 +304,10 @@ public final class GLUtil {
         int S = 128;
         Bitmap bmp = Bitmap.createBitmap(S, S, Bitmap.Config.ARGB_8888);
         Canvas c = new Canvas(bmp);
-        c.drawColor(0xFF222428);
+        c.drawColor(0xFF1E2328);
         Paint p = new Paint();
-        p.setColor(0xFF141518);
-        for (int i = 0; i < S; i += 8) {
-            c.drawLine(0, i, S, i, p);
-        }
+        p.setColor(0xFF101418);
+        for (int i = 0; i < S; i += 8) c.drawLine(0, i, S, i, p);
         return bmp;
     }
 
@@ -278,9 +315,9 @@ public final class GLUtil {
         int S = 128;
         Bitmap bmp = Bitmap.createBitmap(S, S, Bitmap.Config.ARGB_8888);
         Canvas c = new Canvas(bmp);
-        c.drawColor(0xFFFFC72C); // Золотой скин
+        c.drawColor(0xFFFFC107);
         Paint p = new Paint();
-        p.setColor(0xFFE5A812);
+        p.setColor(0xFFFF8F00);
         p.setStrokeWidth(4);
         c.drawLine(0, 0, S, S, p);
         c.drawLine(0, S, S, 0, p);
@@ -291,40 +328,10 @@ public final class GLUtil {
         int S = 128;
         Bitmap bmp = Bitmap.createBitmap(S, S, Bitmap.Config.ARGB_8888);
         Canvas c = new Canvas(bmp);
-        c.drawColor(0xFF1E1010);
+        c.drawColor(0xFFB71C1C);
         Paint p = new Paint();
-        p.setColor(0xFFFF3333); // Огненный дракон
-        Path path = new Path();
-        path.moveTo(10, 60);
-        path.lineTo(40, 20);
-        path.lineTo(90, 80);
-        path.lineTo(120, 30);
-        path.lineTo(100, 110);
-        path.lineTo(30, 90);
-        path.close();
-        c.drawPath(path, p);
-        return bmp;
-    }
-
-    private static Bitmap genPlayerTBitmap() {
-        int S = 128;
-        Bitmap bmp = Bitmap.createBitmap(S, S, Bitmap.Config.ARGB_8888);
-        Canvas c = new Canvas(bmp);
-        c.drawColor(0xFF8B4513); // Террорист (коричнево-красный камуфляж)
-        Paint p = new Paint();
-        p.setColor(0xFFB22222);
-        c.drawRect(20, 20, 108, 108, p);
-        return bmp;
-    }
-
-    private static Bitmap genPlayerCTBitmap() {
-        int S = 128;
-        Bitmap bmp = Bitmap.createBitmap(S, S, Bitmap.Config.ARGB_8888);
-        Canvas c = new Canvas(bmp);
-        c.drawColor(0xFF1E3F66); // Спецназ (сине-серый камуфляж)
-        Paint p = new Paint();
-        p.setColor(0xFF2E5B88);
-        c.drawRect(20, 20, 108, 108, p);
+        p.setColor(0xFFFF5252);
+        c.drawCircle(64, 64, 40, p);
         return bmp;
     }
 
@@ -333,34 +340,8 @@ public final class GLUtil {
         Bitmap bmp = Bitmap.createBitmap(S, S, Bitmap.Config.ARGB_8888);
         Canvas c = new Canvas(bmp);
         Paint p = new Paint();
-        p.setShader(new RadialGradient(S / 2f, S / 2f, S / 2f,
-                0xFFFFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP));
+        p.setShader(new RadialGradient(S / 2f, S / 2f, S / 2f, 0xFFFFFFFF, 0x00FFFFFF, Shader.TileMode.CLAMP));
         c.drawCircle(S / 2f, S / 2f, S / 2f, p);
-        return bmp;
-    }
-
-    private static Bitmap genScopeBitmap() {
-        int S = 512;
-        Bitmap bmp = Bitmap.createBitmap(S, S, Bitmap.Config.ARGB_8888);
-        Canvas c = new Canvas(bmp);
-        c.drawColor(0x00000000);
-        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        p.setColor(0xFF111111);
-        p.setStyle(Paint.Style.STROKE);
-        p.setStrokeWidth(4);
-        c.drawCircle(S / 2f, S / 2f, S / 2f - 16, p);
-        // Перекрестие
-        p.setStrokeWidth(2);
-        p.setColor(0xFFFF2222);
-        c.drawLine(S / 2f, 20, S / 2f, S - 20, p);
-        c.drawLine(20, S / 2f, S - 20, S / 2f, p);
-        // Мил-доты
-        p.setStyle(Paint.Style.FILL);
-        for (int i = -3; i <= 3; i++) {
-            if (i == 0) continue;
-            c.drawCircle(S / 2f + i * 40, S / 2f, 3, p);
-            c.drawCircle(S / 2f, S / 2f + i * 40, 3, p);
-        }
         return bmp;
     }
 }
