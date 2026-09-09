@@ -102,8 +102,8 @@ public final class Weapons {
 
     /** Количество с учётом реликвии «Сдвоенный эмиттер». */
     public int nEff(World w) {
-        int n = nEff(world);
-        if (w.hasRelic(World.R_DOUBLE)
+        int n = n();
+        if (w != null && w.hasRelic(World.R_DOUBLE)
                 && id != W_AURA && id != W_BLACKHOLE && id != W_BLADES) {
             n++;
         }
