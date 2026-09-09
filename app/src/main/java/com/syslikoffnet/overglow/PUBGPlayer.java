@@ -3,10 +3,11 @@ package com.syslikoffnet.overglow;
 import java.util.ArrayList;
 
 /**
- * Игрок PUBG Mobile (Плавная физика полета, ходьбы и баллистики):
- * - Интуитивное управление свободным падением (Freefall) и планированием на парашюте
- * - Точное движение вперед/назад/влево/вправо по направлению взгляда камеры
- * - Поддержка TPP / FPP, прицеливания (ADS), вождения и сбора лута
+ * Игрок PUBG Mobile (Фаза 1: Мобильное управление и TPP-камера):
+ * - Интеграция CharacterMotor (независимое вращение тела и расчет физики)
+ * - Интеграция SpringArmCamera (орбитальная камера с коллизиями и сменой плеча)
+ * - Полет на самолете C-130, свободное падение (Freefall), парашют
+ * - Сбор лута, экипировка, аптечки, энергетики, вождение транспорта
  */
 public final class PUBGPlayer {
 
@@ -18,15 +19,16 @@ public final class PUBGPlayer {
 
     public int moveMode = MODE_IN_PLANE;
 
-    public final Math3D.Vec3 pos = new Math3D.Vec3();
-    public final Math3D.Vec3 vel = new Math3D.Vec3();
+    // Мотор персонажа и TPP Камера
+    public final CharacterMotor motor = new CharacterMotor();
+    public final SpringArmCamera camera = new SpringArmCamera();
+
+    // Быстрый доступ к координатам для совместимости
+    public final Math3D.Vec3 pos = motor.position;
+    public final Math3D.Vec3 vel = motor.velocity;
 
     public float yaw = 0;
     public float pitch = 0;
-
-    public float eyeYawOffset = 0;
-    public float eyePitchOffset = 0;
-    public boolean isFreeLooking = false;
 
     public boolean isTPP = true;
 
@@ -78,7 +80,8 @@ public final class PUBGPlayer {
         moveMode = MODE_FREEFALL;
         pos.set(planePos);
         yaw = planeYaw;
-        pitch = -25f; // направлен вперед-вниз
+        camera.yaw = planeYaw;
+        camera.pitch = -25f;
         altitude = planePos.y;
         vel.set(0, -35f, 0);
         SoundSynth3D.play2D(SoundSynth3D.SOUND_EXPLOSION, 0.5f);
@@ -91,8 +94,12 @@ public final class PUBGPlayer {
         }
     }
 
-    public void update(float dt, PUBGMap map, float moveX, float moveZ) {
+    public void update(float dt, PUBGMap map, float moveX, float moveZ, boolean sprintInput) {
         if (isDead) return;
+
+        // Синхронизация yaw/pitch камеры и игрока
+        this.yaw = camera.yaw;
+        this.pitch = camera.pitch;
 
         if (boost > 0) {
             boost = Math.max(0, boost - dt * 1.2f);
@@ -106,9 +113,6 @@ public final class PUBGPlayer {
                 SoundSynth3D.play2D(SoundSynth3D.SOUND_VICTORY, 0.4f);
             }
         }
-
-        float targetAds = isAiming ? 1.0f : 0f;
-        adsFactor = Math3D.lerp(adsFactor, targetAds, dt * 14f);
 
         Weapon activeW = getActiveWeapon();
         if (activeW != null) {
@@ -131,12 +135,20 @@ public final class PUBGPlayer {
                 updateParachute(dt, map, moveX, moveZ);
                 break;
             case MODE_ON_FOOT:
-                updateOnFoot(dt, map, moveX, moveZ);
+                updateOnFoot(dt, map, moveX, moveZ, sprintInput);
                 break;
             case MODE_DRIVING:
                 updateDriving(dt, map, moveX, moveZ);
                 break;
         }
+
+        // Обновление TPP SpringArm камеры с коллизиями
+        isCrouching = (motor.currentStance == CharacterMotor.STANCE_CROUCH);
+        isProning = (motor.currentStance == CharacterMotor.STANCE_PRONE);
+        isSprinting = motor.isSprinting;
+
+        camera.update(dt, pos, motor.currentHeight, isAiming, isProning, isCrouching, map);
+        this.adsFactor = camera.adsFactor;
 
         float distToZone = Math3D.dist(pos.x, 0, pos.z, map.blueZoneX, 0, map.blueZoneZ);
         if (distToZone > map.blueZoneRadius && moveMode == MODE_ON_FOOT) {
@@ -145,14 +157,12 @@ public final class PUBGPlayer {
     }
 
     private void updateFreefall(float dt, PUBGMap map, float moveX, float moveZ) {
-        // Управление скоростью пикирования от угла наклона камеры
-        float targetSpeed = (pitch < -40f) ? 234f : ((pitch < -15f) ? 180f : 135f);
+        float targetSpeed = (camera.pitch < -40f) ? 234f : ((camera.pitch < -15f) ? 180f : 135f);
         fallSpeed = Math3D.lerp(fallSpeed, targetSpeed, dt * 4f);
 
-        float rad = yaw * Math3D.TO_RAD;
-        float forwardSpd = (pitch > -35f) ? 42f : 18f;
+        float rad = camera.yaw * Math3D.TO_RAD;
+        float forwardSpd = (camera.pitch > -35f) ? 42f : 18f;
 
-        // Планирование в сторону взгляда камеры + руление джойстиком
         float targetVelX = (float) Math.sin(rad) * (moveZ * forwardSpd + 20f) + (float) Math.cos(rad) * (moveX * 28f);
         float targetVelZ = (float) Math.cos(rad) * (moveZ * forwardSpd + 20f) - (float) Math.sin(rad) * (moveX * 28f);
 
@@ -175,7 +185,7 @@ public final class PUBGPlayer {
     private void updateParachute(float dt, PUBGMap map, float moveX, float moveZ) {
         fallSpeed = 24f;
 
-        float rad = yaw * Math3D.TO_RAD;
+        float rad = camera.yaw * Math3D.TO_RAD;
         float targetVelX = (float) Math.sin(rad) * (moveZ * 14f + 8f) + (float) Math.cos(rad) * (moveX * 14f);
         float targetVelZ = (float) Math.cos(rad) * (moveZ * 14f + 8f) - (float) Math.sin(rad) * (moveX * 14f);
 
@@ -197,36 +207,10 @@ public final class PUBGPlayer {
         }
     }
 
-    private void updateOnFoot(float dt, PUBGMap map, float moveX, float moveZ) {
-        float speed = isProning ? 1.8f : (isCrouching ? 3.5f : (isSprinting ? 8.2f : 5.4f));
-        if (isAiming) speed *= 0.6f;
+    private void updateOnFoot(float dt, PUBGMap map, float moveX, float moveZ, boolean sprintInput) {
+        motor.update(dt, moveX, moveZ, camera.yaw, sprintInput, isAiming, map);
 
-        float rad = yaw * Math3D.TO_RAD;
-        float sin = (float) Math.sin(rad);
-        float cos = (float) Math.cos(rad);
-
-        // Вперед/Назад по взгляду (moveZ: +1 = вперед, -1 = назад)
-        float forwardX = sin * moveZ;
-        float forwardZ = cos * moveZ;
-
-        // Влево/Вправо (moveX: +1 = вправо, -1 = влево)
-        float strafeX = cos * moveX;
-        float strafeZ = -sin * moveX;
-
-        vel.x = Math3D.lerp(vel.x, (forwardX + strafeX) * speed, dt * 14f);
-        vel.z = Math3D.lerp(vel.z, (forwardZ + strafeZ) * speed, dt * 14f);
-        vel.y -= 18.0f * dt;
-
-        pos.x += vel.x * dt;
-        pos.z += vel.z * dt;
-        pos.y += vel.y * dt;
-
-        float gHeight = map.getTerrainHeight(pos.x, pos.z);
-        if (pos.y <= gHeight) {
-            pos.y = gHeight;
-            vel.y = 0;
-        }
-
+        // Сбор лута рядом
         for (LootItem item : map.loot) {
             if (!item.isTaken && Math3D.dist(pos.x, pos.y, pos.z, item.x, item.y, item.z) < 1.8f) {
                 pickupItem(item);
@@ -238,7 +222,7 @@ public final class PUBGPlayer {
         if (currentVehicle != null) {
             currentVehicle.hasDriver = true;
             pos.set(currentVehicle.pos.x, currentVehicle.pos.y + 0.6f, currentVehicle.pos.z);
-            yaw = currentVehicle.yaw;
+            motor.bodyYaw = currentVehicle.yaw;
         }
     }
 
@@ -337,7 +321,7 @@ public final class PUBGPlayer {
             float dx = attackerPos.x - pos.x;
             float dz = attackerPos.z - pos.z;
             float angleToAttacker = (float) Math.atan2(dx, dz) * Math3D.TO_DEG;
-            damageAngle = angleToAttacker - yaw;
+            damageAngle = angleToAttacker - camera.yaw;
         }
 
         SoundSynth3D.play2D(SoundSynth3D.SOUND_BODY_HIT, 0.8f);

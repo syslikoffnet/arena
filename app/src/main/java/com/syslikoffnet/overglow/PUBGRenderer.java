@@ -4,13 +4,11 @@ import android.opengl.GLES20;
 import java.util.ArrayList;
 
 /**
- * 3D Рендерер высокого качества для PUBG Mobile:
- * - Unreal Engine 4 PBR модель освещения с ACES Tone Mapping
- * - Идеальная орбитальная TPP/FPP камера со стабильной линией прицеливания
- * - Персонаж: Шлем 3 ур. (Алтын с забралом), Броня 3 ур., Рюкзак, Сковорода на поясе
- * - Транспорт: 3D Багги и УАЗ с 4 отдельными вращающимися колесами
- * - Мир: Дома Починок с крышами и открывающимися дверьми, сосны, холмы
- * - Грузовой самолет C-130 с 4 двигателями, Аирдроп с синим брезентом и парашютом
+ * 3D Рендерер высокого качества для PUBG Mobile (Фаза 1):
+ * - Unreal Engine 4 PBR модель освещения с ACES Filmic Tone Mapping
+ * - Идеальная TPP SpringArm Камера с физическими коллизиями и защитой от прохождения сквозь стены
+ * - Раздельное позиционирование корпуса персонажа (bodyYaw) и наклона прицела (camPitch)
+ * - Детализированные модели бойцов, шлема Алтын, бронежилетов, сковороды и зданий
  */
 public final class PUBGRenderer {
 
@@ -65,49 +63,25 @@ public final class PUBGRenderer {
 
         GLES20.glUseProgram(prog3D);
 
-        float fov = 75f - (player.adsFactor * 32f);
+        // 1. Проекция камеры с динамическим FOV для ADS
+        float fov = 75f - (player.camera.adsFactor * 32f);
         float aspect = (float) width / Math.max(1, height);
         projMat.perspective(fov, aspect, 0.1f, 600f);
 
-        float camYaw = player.yaw + player.recoilYaw;
-        float camPitch = player.pitch + player.recoilPitch;
-
-        float radYaw = camYaw * Math3D.TO_RAD;
-        float radPitch = camPitch * Math3D.TO_RAD;
-
-        float fX = (float) Math.sin(radYaw) * (float) Math.cos(radPitch);
-        float fY = (float) Math.sin(radPitch);
-        float fZ = (float) Math.cos(radYaw) * (float) Math.cos(radPitch);
-
-        float rX = (float) Math.cos(radYaw);
-        float rZ = -(float) Math.sin(radYaw);
-
-        Math3D.Vec3 eye = new Math3D.Vec3();
-        Math3D.Vec3 target = new Math3D.Vec3();
+        // 2. Позиция камеры из SpringArm системы
+        Math3D.Vec3 eye = player.camera.eye;
+        Math3D.Vec3 target = player.camera.target;
 
         if (player.moveMode == PUBGPlayer.MODE_IN_PLANE) {
-            eye.set(map.planePos.x - fX * 32f, map.planePos.y + 14f, map.planePos.z - fZ * 32f);
-            target.set(map.planePos);
-        } else if (player.moveMode == PUBGPlayer.MODE_FREEFALL || player.moveMode == PUBGPlayer.MODE_PARACHUTE) {
-            float dist = 4.8f;
-            eye.set(player.pos.x - fX * dist, player.pos.y + 2.2f - fY * dist * 0.4f, player.pos.z - fZ * dist);
-            target.set(player.pos.x + fX * 20f, player.pos.y + 1.2f + fY * 20f, player.pos.z + fZ * 20f);
-        } else if (player.isTPP && player.adsFactor < 0.85f) {
-            float dist = (player.moveMode == PUBGPlayer.MODE_DRIVING) ? 7.5f : 3.2f;
-            float shoulder = (player.moveMode == PUBGPlayer.MODE_DRIVING) ? 0f : 0.55f;
-
-            eye.set(player.pos.x - fX * dist + rX * shoulder,
-                    player.pos.y + 1.70f - fY * dist * 0.4f,
-                    player.pos.z - fZ * dist + rZ * shoulder);
-
-            target.set(eye.x + fX * 35f, eye.y + fY * 35f, eye.z + fZ * 35f);
-        } else {
-            eye.set(player.pos.x, player.pos.y + 1.68f, player.pos.z);
-            target.set(eye.x + fX * 35f, eye.y + fY * 35f, eye.z + fZ * 35f);
+            float rad = player.camera.yaw * Math3D.TO_RAD;
+            float fX = (float) Math.sin(rad), fZ = (float) Math.cos(rad);
+            eye = new Math3D.Vec3(map.planePos.x - fX * 32f, map.planePos.y + 14f, map.planePos.z - fZ * 32f);
+            target = map.planePos;
         }
 
-        viewMat.lookAt(eye, target, new Math3D.Vec3(0, 1, 0));
+        viewMat.lookAt(eye, target, player.camera.up);
 
+        // 3. Юниформы шейдера
         GLES20.glUniform3f(uEyePos3D, eye.x, eye.y, eye.z);
         GLES20.glUniform3f(uLightDir3D, -0.6f, -0.8f, -0.4f);
         GLES20.glUniform3f(uFogColor3D, 0.42f, 0.65f, 0.85f);
@@ -117,10 +91,10 @@ public final class PUBGRenderer {
         GLES20.glUniform3f(uMuzzlePos3D, particles.muzzleFlashPos.x, particles.muzzleFlashPos.y, particles.muzzleFlashPos.z);
         GLES20.glUniform1f(uMuzzleInt3D, particles.muzzleFlashIntensity);
 
-        // 1. Земля
+        // 4. Земля
         drawMesh(ModelGenerator.groundMesh, GLUtil.texGrass, 0, 0, 0, 1f, 1f, 1f, 0, 1f, 1f, 1f, 1f);
 
-        // 2. Препятствия и дома
+        // 5. Препятствия и дома Починок
         for (PUBGMap.Obstacle obs : map.obstacles) {
             drawMesh(ModelGenerator.boxMesh, obs.texture,
                     obs.getCenterX(), obs.getCenterY(), obs.getCenterZ(),
@@ -128,7 +102,7 @@ public final class PUBGRenderer {
                     0, 1f, 1f, 1f, 1f);
         }
 
-        // 3. Двери
+        // 6. Открывающиеся деревянные двери
         for (InteractiveDoor door : map.doors) {
             drawMeshRotated(ModelGenerator.boxMesh, GLUtil.texCrate,
                     door.hingeX + 0.8f, door.hingeY + 1.2f, door.hingeZ,
@@ -136,7 +110,7 @@ public final class PUBGRenderer {
                     door.baseAngle + door.currentAngle, 0);
         }
 
-        // 4. Деревья
+        // 7. Деревья
         for (int x = -160; x <= 160; x += 40) {
             for (int z = -160; z <= 160; z += 40) {
                 if (Math.abs(x) > 50 || Math.abs(z) > 50) {
@@ -146,12 +120,12 @@ public final class PUBGRenderer {
             }
         }
 
-        // 5. Транспорт
+        // 8. Транспорт
         for (Vehicle3D v : map.vehicles) {
             renderVehicle3D(v);
         }
 
-        // 6. Лут на полу
+        // 9. Лут на полу
         float lootRot = (System.currentTimeMillis() % 3600) / 10f;
         for (LootItem item : map.loot) {
             if (!item.isTaken) {
@@ -159,14 +133,14 @@ public final class PUBGRenderer {
             }
         }
 
-        // 7. Самолет
+        // 10. Самолет C-130
         if (map.planeProgress < 1.0f) {
             drawMeshRotated(ModelGenerator.cargoPlaneMesh, GLUtil.texMetal,
                     map.planePos.x, map.planePos.y, map.planePos.z,
                     1f, 1f, 1f, 45f, 0);
         }
 
-        // 8. Аирдроп
+        // 11. Аирдроп
         if (map.airdropActive) {
             drawMesh(ModelGenerator.airdropBoxMesh, GLUtil.texAirdropTarp,
                     map.airdropPos.x, map.airdropPos.y + 0.9f, map.airdropPos.z, 1f, 1f, 1f, 0, 1f, 1f, 1f, 1f);
@@ -176,53 +150,65 @@ public final class PUBGRenderer {
             }
         }
 
-        // 9. Игрок
-        if (player.isTPP && player.moveMode != PUBGPlayer.MODE_IN_PLANE) {
-            renderSoldier3D(player.pos.x, player.pos.y, player.pos.z, player.yaw, player.pitch,
+        // 12. Персонаж игрока (Корпус ориентирован по bodyYaw, взгляд по camera.pitch)
+        if (player.isTPP && player.moveMode != PUBGPlayer.MODE_IN_PLANE && player.camera.adsFactor < 0.95f) {
+            renderSoldier3D(player.pos.x, player.pos.y, player.pos.z,
+                    player.motor.bodyYaw, player.camera.pitch,
                     GLUtil.texPlayerCT, player.helmetLevel, player.vestLevel, player.backpackLevel,
-                    player.hasPan, player.getActiveWeapon());
+                    player.hasPan, player.getActiveWeapon(), player.motor.currentStance);
         }
 
-        // 10. Боты
+        // 13. Боты
         for (PUBGBot bot : bots) {
             if (!bot.isDead && !bot.isParachuting) {
                 renderSoldier3D(bot.pos.x, bot.pos.y, bot.pos.z, bot.yaw, bot.pitch,
-                        GLUtil.texPlayerT, bot.helmetLevel, bot.vestLevel, 2, true, bot.weapon);
+                        GLUtil.texPlayerT, bot.helmetLevel, bot.vestLevel, 2, true, bot.weapon, CharacterMotor.STANCE_STAND);
             }
         }
     }
 
-    private void renderSoldier3D(float x, float y, float z, float yaw, float pitch,
+    private void renderSoldier3D(float x, float y, float z, float bodyYaw, float aimPitch,
                                  int uniformTex, int helmetLv, int vestLv, int backpackLv,
-                                 boolean hasPan, Weapon wep) {
-        drawMeshRotated(ModelGenerator.soldierTorsoMesh, uniformTex, x, y + 0.88f, z, 1f, 1f, 1f, yaw, 0);
+                                 boolean hasPan, Weapon wep, int stance) {
+        float bodyHeight = (stance == CharacterMotor.STANCE_PRONE) ? 0.20f :
+                ((stance == CharacterMotor.STANCE_CROUCH) ? 0.60f : 0.88f);
+
+        // Торс
+        drawMeshRotated(ModelGenerator.soldierTorsoMesh, uniformTex, x, y + bodyHeight, z, 1f, 1f, 1f, bodyYaw, 0);
 
         if (vestLv > 0) {
-            drawMeshRotated(ModelGenerator.vest3Mesh, GLUtil.texMetal, x, y + 0.92f, z, 1f, 1f, 1f, yaw, 0);
+            drawMeshRotated(ModelGenerator.vest3Mesh, GLUtil.texMetal, x, y + bodyHeight + 0.04f, z, 1f, 1f, 1f, bodyYaw, 0);
         }
 
         if (backpackLv > 0) {
-            drawMeshRotated(ModelGenerator.backpack3Mesh, GLUtil.texVehicle, x, y + 0.90f, z, 1f, 1f, 1f, yaw, 0);
+            drawMeshRotated(ModelGenerator.backpack3Mesh, GLUtil.texVehicle, x, y + bodyHeight + 0.02f, z, 1f, 1f, 1f, bodyYaw, 0);
         }
 
         if (hasPan) {
-            drawMeshRotated(ModelGenerator.panMesh, GLUtil.texMetal, x, y + 0.55f, z - 0.22f, 1f, 1f, 1f, yaw + 180f, 45f);
+            drawMeshRotated(ModelGenerator.panMesh, GLUtil.texMetal, x, y + bodyHeight - 0.30f, z - 0.22f, 1f, 1f, 1f, bodyYaw + 180f, 45f);
         }
 
-        drawMeshRotated(ModelGenerator.soldierHeadMesh, GLUtil.texWeaponDark, x, y + 1.55f, z, 1f, 1f, 1f, yaw, pitch);
+        // Голова и шлем (поворачиваются по взгляду прицеливания)
+        float headHeight = bodyHeight + 0.65f;
+        drawMeshRotated(ModelGenerator.soldierHeadMesh, GLUtil.texWeaponDark, x, y + headHeight, z, 1f, 1f, 1f, bodyYaw, aimPitch);
 
         if (helmetLv > 0) {
-            drawMeshRotated(ModelGenerator.helmet3Mesh, GLUtil.texMetal, x, y + 1.62f, z, 1f, 1f, 1f, yaw, pitch);
+            drawMeshRotated(ModelGenerator.helmet3Mesh, GLUtil.texMetal, x, y + headHeight + 0.07f, z, 1f, 1f, 1f, bodyYaw, aimPitch);
         }
 
-        drawMeshRotated(ModelGenerator.soldierLegMesh, uniformTex, x - 0.16f, y + 0.38f, z, 1f, 1f, 1f, yaw, 0);
-        drawMeshRotated(ModelGenerator.soldierLegMesh, uniformTex, x + 0.16f, y + 0.38f, z, 1f, 1f, 1f, yaw, 0);
+        // Ноги
+        if (stance != CharacterMotor.STANCE_PRONE) {
+            float legHeight = (stance == CharacterMotor.STANCE_CROUCH) ? 0.20f : 0.38f;
+            drawMeshRotated(ModelGenerator.soldierLegMesh, uniformTex, x - 0.16f, y + legHeight, z, 1f, 1f, 1f, bodyYaw, 0);
+            drawMeshRotated(ModelGenerator.soldierLegMesh, uniformTex, x + 0.16f, y + legHeight, z, 1f, 1f, 1f, bodyYaw, 0);
+        }
 
+        // Оружие в руках
         if (wep != null) {
             Mesh wMesh = (wep.id == Weapon.ID_AWM) ? ModelGenerator.awmMesh :
                          ((wep.id == Weapon.ID_AKR) ? ModelGenerator.akmMesh : ModelGenerator.m416Mesh);
             int wTex = (wep.id == Weapon.ID_AWM) ? GLUtil.texWeaponGold : GLUtil.texWeaponDark;
-            drawMeshRotated(wMesh, wTex, x + 0.22f, y + 1.18f, z + 0.15f, 1f, 1f, 1f, yaw, pitch);
+            drawMeshRotated(wMesh, wTex, x + 0.22f, y + bodyHeight + 0.30f, z + 0.15f, 1f, 1f, 1f, bodyYaw, aimPitch);
         }
     }
 

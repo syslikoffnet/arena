@@ -2,59 +2,37 @@ package com.syslikoffnet.overglow;
 
 import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.RectF;
-import android.graphics.Shader;
 import android.view.MotionEvent;
 
 import java.util.ArrayList;
 
 /**
- * Высокодетализированный 1-в-1 тактический интерфейс и отзывчивое управление PUBG Mobile:
- * - Плавный виртуальный джойстик ходьбы и свободного полета (Left Thumb)
- * - Естественный 360° обзор камеры и прицеливания (Right Thumb)
- * - Полноценное управление полетом при прыжке из самолета (пикирование, планирование)
- * - Тактические кнопки стрельбы, наклонов, прицела, смены стоек и транспорта
+ * Фаза 1: Тактический HUD и Сенсорный интерфейс PUBG Mobile:
+ * - Интеграция MobileInputController (Мультитач 4-6 пальцев, плавающий стик)
+ * - Смена плеча (Shoulder Swap 🔄), ADS Scope (🎯), Наклоны (Peek Q/E)
+ * - Стойки: Прыжок (⬆), Присед (🧎), Положение лёжа (🛌)
+ * - 360° Компас со сторонами света и динамическая радарная мини-карта
+ * - 0 GC Alloc во время игры
  */
 public final class PUBGTouchHUD {
 
-    // Чувствительность обзора
-    public float sensitivityX = 0.24f;
-    public float sensitivityY = 0.22f;
+    public final MobileInputController input = new MobileInputController();
 
-    // Ввод движения и транспорта
+    // Быстрый доступ
     public float moveX = 0, moveZ = 0;
     public float vehicleThrottle = 0, vehicleSteer = 0;
     public boolean vehicleHandbrake = false;
-
-    // Кнопки
-    public boolean btnFire = false;
-    public boolean btnFireLeft = false;
-    public boolean btnJump = false;
-    public boolean btnCrouch = false;
-    public boolean btnProne = false;
-    public boolean btnReload = false;
-    public boolean btnInteract = false;
-
-    // Указатели касаний
-    private int stickPointerId = -1;
-    private float stickStartX, stickStartY, stickCurX, stickCurY;
-    private int lookPointerId = -1;
-    private float lastLookX, lastLookY;
-
-    public int screenW = 1920, screenH = 1080;
 
     private final Paint pFill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint pStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint pText = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rect = new RectF();
-    private final Path path = new Path();
 
     public void resize(int w, int h) {
-        this.screenW = w;
-        this.screenH = h;
+        input.setScreenSize(w, h);
     }
 
     public void render(Canvas c, int w, int h, PUBGPlayer player, PUBGMap map,
@@ -68,12 +46,38 @@ public final class PUBGTouchHUD {
             renderDrivingHUD(c, w, h, player);
         } else {
             renderOnFootHUD(c, w, h, player, map, bots, aliveCount);
+            renderJoystick(c);
         }
     }
 
-    // =========================================================================
-    // HUD Пешком (On Foot)
-    // =========================================================================
+    private void renderJoystick(Canvas c) {
+        if (input.hasActiveStick()) {
+            float sx = input.getStickStartX();
+            float sy = input.getStickStartY();
+            float cx = input.getStickCurX();
+            float cy = input.getStickCurY();
+
+            pFill.setStyle(Paint.Style.FILL);
+            pFill.setColor(0x4400E5FF);
+            c.drawCircle(sx, sy, 70, pFill);
+
+            pStroke.setStyle(Paint.Style.STROKE);
+            pStroke.setColor(0x8800E5FF);
+            pStroke.setStrokeWidth(2f);
+            c.drawCircle(sx, sy, 70, pStroke);
+
+            pFill.setColor(input.sprintLocked ? 0xFFFF9800 : 0xCC00E5FF);
+            c.drawCircle(cx, cy, 32, pFill);
+
+            if (input.sprintLocked) {
+                pText.setColor(0xFF000000);
+                pText.setTextSize(14);
+                pText.setFakeBoldText(true);
+                c.drawText("⚡", cx - 6, cy + 5, pText);
+            }
+        }
+    }
+
     private void renderOnFootHUD(Canvas c, int w, int h, PUBGPlayer player, PUBGMap map,
                                  ArrayList<PUBGBot> bots, int aliveCount) {
         renderTopHeader(c, w, h, player, aliveCount);
@@ -81,33 +85,15 @@ public final class PUBGTouchHUD {
         renderNearbyLoot(c, w, h, player, map);
         renderHealthAndBoost(c, w, h, player);
         renderWeaponSlots(c, w, h, player);
-        renderRealisticTouchButtons(c, w, h, player, map);
-        renderJoystick(c);
+        renderTacticalButtons(c, w, h, player);
 
-        if (player.adsFactor > 0.85f && player.getActiveWeapon() != null && player.getActiveWeapon().adsZoom > 3f) {
+        if (player.camera.adsFactor > 0.85f && player.getActiveWeapon() != null && player.getActiveWeapon().adsZoom > 3f) {
             renderScope(c, w, h);
         } else {
             renderCrosshair(c, w, h, player);
         }
     }
 
-    private void renderJoystick(Canvas c) {
-        if (stickPointerId != -1) {
-            pFill.setStyle(Paint.Style.FILL);
-            pFill.setColor(0x4400E5FF);
-            c.drawCircle(stickStartX, stickStartY, 70, pFill);
-
-            pStroke.setStyle(Paint.Style.STROKE);
-            pStroke.setColor(0x8800E5FF);
-            pStroke.setStrokeWidth(2f);
-            c.drawCircle(stickStartX, stickStartY, 70, pStroke);
-
-            pFill.setColor(0xCC00E5FF);
-            c.drawCircle(stickCurX, stickCurY, 32, pFill);
-        }
-    }
-
-    // ------------------------------------------------------------- 1. Компас и Счётчики
     private void renderTopHeader(Canvas c, int w, int h, PUBGPlayer player, int aliveCount) {
         pFill.setStyle(Paint.Style.FILL);
         pFill.setColor(0xCC0F1722);
@@ -127,7 +113,7 @@ public final class PUBGTouchHUD {
         pText.setColor(0xFFFF9800);
         c.drawText("KILLS " + player.kills, 145, 45, pText);
 
-        // 360° Компас с делениями
+        // 360° Компас
         float cx = w / 2f;
         pFill.setColor(0xAA0A1118);
         rect.set(cx - 220, 15, cx + 220, 58);
@@ -137,7 +123,7 @@ public final class PUBGTouchHUD {
         pStroke.setStrokeWidth(1f);
         c.drawRoundRect(rect, 6, 6, pStroke);
 
-        float yaw = (player.yaw % 360 + 360) % 360;
+        float yaw = (player.camera.yaw % 360 + 360) % 360;
 
         pStroke.setColor(0x88FFFFFF);
         for (int d = -60; d <= 60; d += 15) {
@@ -167,11 +153,8 @@ public final class PUBGTouchHUD {
         c.drawText(heading, cx - pText.measureText(heading) / 2f, 28, pText);
     }
 
-    // ------------------------------------------------------------- 2. Мини-карта
     private void renderMiniMap(Canvas c, int w, int h, PUBGPlayer player, PUBGMap map, ArrayList<PUBGBot> bots) {
-        float mx = w - 105;
-        float my = 95;
-        float r = 78;
+        float mx = w - 105, my = 95, r = 78;
 
         pFill.setStyle(Paint.Style.FILL);
         pFill.setColor(0xDD111822);
@@ -193,14 +176,12 @@ public final class PUBGTouchHUD {
         pFill.setColor(0xFFFFD700);
         c.drawCircle(mx, my, 5, pFill);
 
-        float rad = player.yaw * Math3D.TO_RAD;
+        float rad = player.camera.yaw * Math3D.TO_RAD;
         c.drawLine(mx, my, mx + (float) Math.sin(rad) * 12, my - (float) Math.cos(rad) * 12, pStroke);
     }
 
-    // ------------------------------------------------------------- 3. Лут рядом
     private void renderNearbyLoot(Canvas c, int w, int h, PUBGPlayer player, PUBGMap map) {
-        float startX = w - 290;
-        float startY = 190;
+        float startX = w - 290, startY = 190;
         int drawn = 0;
 
         for (LootItem item : map.loot) {
@@ -226,12 +207,9 @@ public final class PUBGTouchHUD {
         }
     }
 
-    // ------------------------------------------------------------- 4. HP и Буст
     private void renderHealthAndBoost(Canvas c, int w, int h, PUBGPlayer player) {
-        float cx = w / 2f;
-        float barW = 340f;
-        float startX = cx - barW / 2f;
-        float startY = h - 68;
+        float cx = w / 2f, barW = 340f;
+        float startX = cx - barW / 2f, startY = h - 68;
 
         pFill.setStyle(Paint.Style.FILL);
         pFill.setColor(0xCC0A1018);
@@ -253,12 +231,8 @@ public final class PUBGTouchHUD {
         c.drawText("🛡 Lv." + player.vestLevel, startX + barW + 16, startY + 10, pText);
     }
 
-    // ------------------------------------------------------------- 5. Оружие
     private void renderWeaponSlots(Canvas c, int w, int h, PUBGPlayer player) {
-        float cx = w / 2f;
-        float slotW = 160f, slotH = 58f;
-        float startY = h - 138;
-
+        float cx = w / 2f, slotW = 160f, slotH = 58f, startY = h - 138;
         renderSingleSlot(c, cx - slotW - 10, startY, slotW, slotH, player.weapons[0], player.activeSlot == 0, "1. ");
         renderSingleSlot(c, cx + 10, startY, slotW, slotH, player.weapons[1], player.activeSlot == 1, "2. ");
     }
@@ -290,37 +264,37 @@ public final class PUBGTouchHUD {
         }
     }
 
-    // ------------------------------------------------------------- 6. Тактические кнопки
-    private void renderRealisticTouchButtons(Canvas c, int w, int h, PUBGPlayer player, PUBGMap map) {
-        // Огонь справа (Правый палец)
-        drawBulletFireButton(c, w * 0.86f, h * 0.70f, 62, btnFire);
+    private void renderTacticalButtons(Canvas c, int w, int h, PUBGPlayer player) {
+        // Огонь справа и слева
+        drawFireButton(c, w * 0.86f, h * 0.70f, 62, input.isFiring);
+        drawFireButton(c, w * 0.12f, h * 0.35f, 48, input.isLeftFiring);
 
-        // Огонь слева (Левый указательный палец)
-        drawBulletFireButton(c, w * 0.12f, h * 0.35f, 48, btnFireLeft);
+        // Прицел ADS
+        drawScopeButton(c, w * 0.88f, h * 0.42f, 48, player.isAiming);
 
-        // Прицел (ADS Scope)
-        drawOpticScopeButton(c, w * 0.88f, h * 0.42f, 48, player.isAiming);
+        // Смена плеча (Shoulder Swap 🔄)
+        drawCircleBtn(c, w * 0.92f, h * 0.25f, 36, "🔄", player.camera.targetShoulderOffset < 0);
 
-        // Наклоны (Peek Q / E)
-        drawPeekButton(c, w * 0.78f, h * 0.35f, 38, "◀ Q", player.leanAngle < -5f);
-        drawPeekButton(c, w * 0.78f, h * 0.46f, 38, "▶ E", player.leanAngle > 5f);
+        // Наклоны Peek Q / E
+        drawCircleBtn(c, w * 0.78f, h * 0.35f, 38, "◀ Q", player.leanAngle < -5f);
+        drawCircleBtn(c, w * 0.78f, h * 0.46f, 38, "▶ E", player.leanAngle > 5f);
 
-        // Стойки: Прыжок, Присед, Лечь
-        drawTacticalStanceBtn(c, w * 0.92f, h * 0.88f, 42, "⬆", btnJump);
-        drawTacticalStanceBtn(c, w * 0.80f, h * 0.88f, 42, "🧎", player.isCrouching);
-        drawTacticalStanceBtn(c, w * 0.68f, h * 0.88f, 42, "🛌", player.isProning);
+        // Стойки (Прыжок, Присед, Лечь)
+        drawCircleBtn(c, w * 0.92f, h * 0.88f, 42, "⬆", input.isJumping);
+        drawCircleBtn(c, w * 0.80f, h * 0.88f, 42, "🧎", player.motor.currentStance == CharacterMotor.STANCE_CROUCH);
+        drawCircleBtn(c, w * 0.68f, h * 0.88f, 42, "🛌", player.motor.currentStance == CharacterMotor.STANCE_PRONE);
 
         // Перезарядка
-        drawTacticalStanceBtn(c, w * 0.74f, h * 0.55f, 38, "🔄", btnReload);
+        drawCircleBtn(c, w * 0.74f, h * 0.55f, 38, "🔄", input.isReloading);
 
-        // Взаимодействие (Двери / Машины)
-        drawTacticalStanceBtn(c, w * 0.76f, h * 0.28f, 40, "🚪 / 🚗", false);
+        // Интерактив
+        drawCircleBtn(c, w * 0.76f, h * 0.28f, 40, "🚪 / 🚗", false);
 
         // Быстрое лечение
         drawHealShortcut(c, w * 0.25f, h * 0.88f, player);
     }
 
-    private void drawBulletFireButton(Canvas c, float cx, float cy, float r, boolean active) {
+    private void drawFireButton(Canvas c, float cx, float cy, float r, boolean active) {
         pFill.setStyle(Paint.Style.FILL);
         pFill.setColor(active ? 0xEEFF5722 : 0xAA111822);
         c.drawCircle(cx, cy, r, pFill);
@@ -336,7 +310,7 @@ public final class PUBGTouchHUD {
         c.drawText("🔥", cx - 15, cy + 10, pText);
     }
 
-    private void drawOpticScopeButton(Canvas c, float cx, float cy, float r, boolean active) {
+    private void drawScopeButton(Canvas c, float cx, float cy, float r, boolean active) {
         pFill.setStyle(Paint.Style.FILL);
         pFill.setColor(active ? 0xEE00E5FF : 0xAA111822);
         c.drawCircle(cx, cy, r, pFill);
@@ -352,23 +326,7 @@ public final class PUBGTouchHUD {
         c.drawText("🎯", cx - 14, cy + 9, pText);
     }
 
-    private void drawPeekButton(Canvas c, float cx, float cy, float r, String text, boolean active) {
-        pFill.setStyle(Paint.Style.FILL);
-        pFill.setColor(active ? 0xDD00E5FF : 0x88111822);
-        c.drawCircle(cx, cy, r, pFill);
-
-        pStroke.setStyle(Paint.Style.STROKE);
-        pStroke.setColor(0x66FFFFFF);
-        pStroke.setStrokeWidth(2f);
-        c.drawCircle(cx, cy, r, pStroke);
-
-        pText.setColor(0xFFFFFFFF);
-        pText.setTextSize(14);
-        pText.setFakeBoldText(true);
-        c.drawText(text, cx - 12, cy + 5, pText);
-    }
-
-    private void drawTacticalStanceBtn(Canvas c, float cx, float cy, float r, String icon, boolean active) {
+    private void drawCircleBtn(Canvas c, float cx, float cy, float r, String icon, boolean active) {
         pFill.setStyle(Paint.Style.FILL);
         pFill.setColor(active ? 0xEE00E5FF : 0x88111822);
         c.drawCircle(cx, cy, r, pFill);
@@ -379,10 +337,10 @@ public final class PUBGTouchHUD {
         c.drawCircle(cx, cy, r, pStroke);
 
         pText.setColor(active ? 0xFF000000 : 0xFFFFFFFF);
-        pText.setTextSize(20);
+        pText.setTextSize(18);
         pText.setFakeBoldText(true);
         float tw = pText.measureText(icon);
-        c.drawText(icon, cx - tw / 2f, cy + 7, pText);
+        c.drawText(icon, cx - tw / 2f, cy + 6, pText);
     }
 
     private void drawHealShortcut(Canvas c, float cx, float cy, PUBGPlayer player) {
@@ -401,7 +359,6 @@ public final class PUBGTouchHUD {
         c.drawText("🩹 x" + player.firstAidCount, cx - 22, cy + 6, pText);
     }
 
-    // ------------------------------------------------------------- 7. Полет / Парашют
     private void renderPlaneFlightHUD(Canvas c, int w, int h, PUBGMap map) {
         float cx = w / 2f;
         pFill.setStyle(Paint.Style.FILL);
@@ -442,7 +399,6 @@ public final class PUBGTouchHUD {
         }
     }
 
-    // ------------------------------------------------------------- 8. Вождение
     private void renderDrivingHUD(Canvas c, int w, int h, PUBGPlayer player) {
         drawPedalBtn(c, w * 0.88f, h * 0.70f, 60, "GAS", true);
         drawPedalBtn(c, w * 0.74f, h * 0.76f, 48, "BRAKE", false);
@@ -450,7 +406,7 @@ public final class PUBGTouchHUD {
         drawSteerBtn(c, w * 0.10f, h * 0.70f, 52, "◀");
         drawSteerBtn(c, w * 0.24f, h * 0.70f, 52, "▶");
 
-        drawTacticalStanceBtn(c, w * 0.86f, h * 0.34f, 46, "EXIT 🚪", false);
+        drawCircleBtn(c, w * 0.86f, h * 0.34f, 46, "EXIT 🚪", false);
 
         if (player.currentVehicle != null) {
             float cx = w / 2f;
@@ -523,143 +479,10 @@ public final class PUBGTouchHUD {
     }
 
     public boolean onTouchEvent(MotionEvent event, PUBGPlayer player, PUBGMap map) {
-        int action = event.getActionMasked();
-        int index = event.getActionIndex();
-        int pointerId = event.getPointerId(index);
-        float x = event.getX(index);
-        float y = event.getY(index);
-
-        switch (action) {
-            case MotionEvent.ACTION_DOWN:
-            case MotionEvent.ACTION_POINTER_DOWN:
-                handleDown(pointerId, x, y, player, map);
-                break;
-            case MotionEvent.ACTION_MOVE:
-                for (int i = 0; i < event.getPointerCount(); i++) {
-                    int pId = event.getPointerId(i);
-                    handleMove(pId, event.getX(i), event.getY(i), player);
-                }
-                break;
-            case MotionEvent.ACTION_UP:
-            case MotionEvent.ACTION_POINTER_UP:
-            case MotionEvent.ACTION_CANCEL:
-                handleUp(pointerId, x, y, player);
-                break;
-        }
-        return true;
+        return input.onTouchEvent(event, player.camera, player, map);
     }
 
-    private void handleDown(int id, float x, float y, PUBGPlayer player, PUBGMap map) {
-        float rx = x / screenW;
-        float ry = y / screenH;
-
-        if (player.moveMode == PUBGPlayer.MODE_IN_PLANE) {
-            if (rx > 0.35f && rx < 0.65f && ry > 0.70f) {
-                player.jumpFromPlane(map.planePos, 0);
-                return;
-            }
-        }
-
-        if (player.moveMode == PUBGPlayer.MODE_FREEFALL) {
-            if (rx > 0.35f && rx < 0.65f && ry > 0.70f) {
-                player.openParachute();
-                return;
-            }
-        }
-
-        if (player.moveMode == PUBGPlayer.MODE_DRIVING) {
-            if (rx > 0.80f && ry > 0.60f) vehicleThrottle = 1f;
-            else if (rx > 0.68f && rx < 0.80f && ry > 0.65f) vehicleThrottle = -1f;
-            else if (rx < 0.16f && ry > 0.60f) vehicleSteer = -1f;
-            else if (rx > 0.16f && rx < 0.30f && ry > 0.60f) vehicleSteer = 1f;
-            else if (rx > 0.75f && ry < 0.45f) player.enterExitVehicle(map);
-            return;
-        }
-
-        // Кнопки стрельбы и прицела
-        if (rx > 0.78f && rx < 0.94f && ry > 0.55f && ry < 0.85f) { btnFire = true; return; }
-        if (rx < 0.22f && ry > 0.20f && ry < 0.50f) { btnFireLeft = true; return; }
-        if (rx > 0.82f && ry > 0.32f && ry < 0.52f) { player.isAiming = !player.isAiming; return; }
-
-        // Наклоны Peek Q/E
-        if (rx > 0.74f && rx < 0.84f && ry > 0.30f && ry < 0.40f) { player.leanAngle = (player.leanAngle < -5f) ? 0f : -15f; return; }
-        if (rx > 0.74f && rx < 0.84f && ry > 0.40f && ry < 0.50f) { player.leanAngle = (player.leanAngle > 5f) ? 0f : 15f; return; }
-
-        // Стойки
-        if (rx > 0.86f && ry > 0.80f) { btnJump = true; return; }
-        if (rx > 0.74f && rx < 0.86f && ry > 0.80f) { player.isCrouching = !player.isCrouching; player.isProning = false; return; }
-        if (rx > 0.62f && rx < 0.74f && ry > 0.80f) { player.isProning = !player.isProning; player.isCrouching = false; return; }
-
-        // Перезарядка
-        if (rx > 0.68f && rx < 0.78f && ry > 0.50f && ry < 0.62f) { btnReload = true; return; }
-
-        // Интерактив
-        if (rx > 0.70f && rx < 0.82f && ry > 0.22f && ry < 0.35f) {
-            player.interactDoors(map);
-            player.enterExitVehicle(map);
-            return;
-        }
-
-        // Лечение
-        if (rx > 0.20f && rx < 0.30f && ry > 0.80f) { player.useMedkit(); return; }
-
-        // Смена слотов оружия
-        if (rx > 0.35f && rx < 0.50f && ry > 0.80f) { player.activeSlot = 0; return; }
-        if (rx > 0.50f && rx < 0.65f && ry > 0.80f) { player.activeSlot = 1; return; }
-
-        // Левая половина экрана: Виртуальный джойстик (Left Thumb)
-        if (x < screenW * 0.48f && stickPointerId == -1) {
-            stickPointerId = id;
-            stickStartX = x; stickStartY = y;
-            stickCurX = x; stickCurY = y;
-            return;
-        }
-
-        // Правая половина экрана: Обзор камеры (Right Thumb)
-        if (x >= screenW * 0.48f && lookPointerId == -1) {
-            lookPointerId = id;
-            lastLookX = x;
-            lastLookY = y;
-        }
+    public boolean isShooting() {
+        return input.isFiring || input.isLeftFiring;
     }
-
-    private void handleMove(int id, float x, float y, PUBGPlayer player) {
-        if (id == stickPointerId) {
-            stickCurX = x; stickCurY = y;
-            float dx = stickCurX - stickStartX;
-            float dy = stickCurY - stickStartY;
-            float maxR = screenH * 0.12f;
-            float len = (float) Math.sqrt(dx * dx + dy * dy);
-            if (len > maxR) { dx = (dx / len) * maxR; dy = (dy / len) * maxR; }
-            moveX = dx / maxR;
-            moveZ = -dy / maxR; // Вверх по экрану = вперед (+moveZ)
-        } else if (id == lookPointerId) {
-            float dx = x - lastLookX;
-            float dy = y - lastLookY;
-            lastLookX = x; lastLookY = y;
-
-            // Естественное панорамирование (вправо свайп = поворот вправо, вверх свайп = взгляд вверх)
-            player.yaw += dx * sensitivityX;
-            player.pitch -= dy * sensitivityY;
-            player.pitch = Math3D.clamp(player.pitch, -85f, 85f);
-        }
-    }
-
-    private void handleUp(int id, float x, float y, PUBGPlayer player) {
-        btnFire = false;
-        btnFireLeft = false;
-        btnReload = false;
-        btnJump = false;
-        vehicleThrottle = 0;
-        vehicleSteer = 0;
-
-        if (id == stickPointerId) {
-            stickPointerId = -1;
-            moveX = 0; moveZ = 0;
-        } else if (id == lookPointerId) {
-            lookPointerId = -1;
-        }
-    }
-
-    public boolean isShooting() { return btnFire || btnFireLeft; }
 }

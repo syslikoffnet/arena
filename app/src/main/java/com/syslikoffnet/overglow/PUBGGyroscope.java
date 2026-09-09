@@ -108,6 +108,9 @@ public final class PUBGGyroscope implements SensorEventListener {
         player.yaw += gyroYawDelta;
         player.pitch = Math3D.clamp(player.pitch, -85f, 85f);
 
+        player.camera.pitch = player.pitch;
+        player.camera.yaw = player.yaw;
+
         gyroPitchDelta = 0;
         gyroYawDelta = 0;
     }

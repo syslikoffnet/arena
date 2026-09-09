@@ -10,11 +10,10 @@ import android.view.MotionEvent;
 import java.util.ArrayList;
 
 /**
- * Главный игровой контроллер PUBG Mobile (Battle Royale):
- * - Лобби с 1-в-1 интерфейсом, выбором карт (Erangel, Miramar, Sanhok, Livik) и Royale Pass
- * - Полноценный матч: Остров ожидания -> Полет на самолете -> Прыжок и парашют ->
- *   Сбор лута в домах -> Открытие дверей -> Вождение транспорта -> Сужение зоны -> Победа #1!
- * - Профессиональный гироскоп (Gyroscope Aiming) для идеальной доводки прицела
+ * Главный игровой контроллер PUBG Mobile (Фаза 1: Управление и Камера):
+ * - Интеграция SpringArm камеры, CharacterMotor, TouchPad и Gyroscope
+ * - Физическая защита от прострелов сквозь стены (WorldCollider)
+ * - Лобби с выбором режимов, подбор матча, Battle Royale геймплей
  */
 public final class PUBGGame {
 
@@ -97,7 +96,7 @@ public final class PUBGGame {
         // Применение наклонов гироскопа к прицеливанию
         gyroscope.applyToPlayer(player);
 
-        player.update(dt, map, touchHUD.moveX, touchHUD.moveZ);
+        player.update(dt, map, touchHUD.input.moveX, touchHUD.input.moveZ, touchHUD.input.sprintLocked);
 
         if (player.moveMode == PUBGPlayer.MODE_DRIVING && player.currentVehicle != null) {
             player.currentVehicle.update(dt, map, bots, player,
@@ -144,8 +143,8 @@ public final class PUBGGame {
 
         SoundSynth3D.play2D(soundId, 1.0f);
 
-        float radYaw = (player.yaw + player.recoilYaw) * Math3D.TO_RAD;
-        float radPitch = (player.pitch + player.recoilPitch) * Math3D.TO_RAD;
+        float radYaw = (player.camera.yaw + player.recoilYaw) * Math3D.TO_RAD;
+        float radPitch = (player.camera.pitch + player.recoilPitch) * Math3D.TO_RAD;
 
         float dirX = (float) Math.sin(radYaw) * (float) Math.cos(radPitch);
         float dirY = (float) Math.sin(radPitch);
@@ -156,10 +155,12 @@ public final class PUBGGame {
 
         particles.triggerMuzzleFlash(rayOrigin.x + dirX * 0.8f, rayOrigin.y + dirY * 0.8f, rayOrigin.z + dirZ * 0.8f);
 
-        float closestHit = 250f;
+        // 1. Проверка попадания в стены и дома (WorldCollider)
+        float closestHit = WorldCollider.raycastWorld(rayOrigin, rayDir, 250f, map);
         PUBGBot hitBot = null;
         boolean hitHead = false;
 
+        // 2. Проверка попадания во врагов перед стеной
         for (PUBGBot bot : bots) {
             if (bot.isDead || bot.isParachuting) continue;
             float tHead = bot.getHeadBox().raycast(rayOrigin, rayDir);
@@ -266,8 +267,8 @@ public final class PUBGGame {
         if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
             float x = event.getX();
             float y = event.getY();
-            int w = touchHUD.screenW;
-            int h = touchHUD.screenH;
+            int w = touchHUD.input.screenWidth;
+            int h = touchHUD.input.screenHeight;
 
             if (state == STATE_MATCHING) {
                 float cx = w / 2f, cy = h / 2f;
