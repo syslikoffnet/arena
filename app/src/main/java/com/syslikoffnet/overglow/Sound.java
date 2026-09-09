@@ -27,7 +27,7 @@ public final class Sound {
     private static volatile boolean running;
     private static boolean soundOn = true, musicOn = true;
 
-    private static short[] musicLoop;   // сгенерированный луп
+    private static float[] musicLoop;   // сгенерированный луп
     private static volatile boolean musicPlaying = false;
 
     // Активные голоса
@@ -49,19 +49,34 @@ public final class Sound {
         soundOn = S.sound(ctx);
         musicOn = S.music(ctx);
 
-        int buf = AudioTrack.getMinBufferSize(RATE, AudioFormat.CHANNEL_OUT_MONO,
-                AudioFormat.ENCODING_PCM_16BIT);
-        track = new AudioTrack(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_GAME)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build(),
-                new AudioFormat.Builder()
-                        .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-                        .setSampleRate(RATE)
-                        .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                        .build(),
-                Math.max(buf, RATE / 2), AudioTrack.MODE_STREAM,
-                0 /* sessionId */);
+        try {
+            int minBuf = AudioTrack.getMinBufferSize(RATE, AudioFormat.CHANNEL_OUT_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT);
+            int bufSize = minBuf > 0 ? Math.max(minBuf * 2, 4096) : 8192;
+            // Размер буфера в байтах должен быть кратен размеру фрейма (2 байта для 16-бит моно)
+            if (bufSize % 2 != 0) {
+                bufSize++;
+            }
+
+            track = new AudioTrack(new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_GAME)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build(),
+                    new AudioFormat.Builder()
+                            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+                            .setSampleRate(RATE)
+                            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                            .build(),
+                    bufSize, AudioTrack.MODE_STREAM,
+                    0 /* sessionId */);
+
+            if (track.getState() != AudioTrack.STATE_INITIALIZED) {
+                track.release();
+                track = null;
+            }
+        } catch (Throwable t) {
+            track = null;
+        }
 
         musicLoop = genMusic();
 
@@ -81,18 +96,33 @@ public final class Sound {
     }
 
     public static void resume() {
-        if (track != null) track.play();
+        if (track != null && track.getState() == AudioTrack.STATE_INITIALIZED) {
+            try {
+                track.play();
+            } catch (Throwable ignored) {
+            }
+        }
     }
 
     public static void pause() {
-        if (track != null) track.pause();
+        if (track != null && track.getState() == AudioTrack.STATE_INITIALIZED) {
+            try {
+                track.pause();
+            } catch (Throwable ignored) {
+            }
+        }
     }
 
     private static void mixLoop() {
         int CHUNK = 1024;
         short[] out = new short[CHUNK];
         int mPos = 0;
-        track.play();
+        try {
+            if (track != null && track.getState() == AudioTrack.STATE_INITIALIZED) {
+                track.play();
+            }
+        } catch (Throwable ignored) {
+        }
         while (running) {
             for (int i = 0; i < CHUNK; i++) {
                 float s = 0;
@@ -120,9 +150,19 @@ public final class Sound {
                     vPhase[v] = (ph + f / RATE) % 1f;
                     vPos[v]++;
                 }
-                out[i] = (short) Math.max(-1f, Math.min(1f, s)) ;
+                out[i] = (short) (Math.max(-1f, Math.min(1f, s)) * 32767f);
             }
-            track.write(out, 0, CHUNK);
+            if (track != null && track.getState() == AudioTrack.STATE_INITIALIZED) {
+                try {
+                    track.write(out, 0, CHUNK);
+                } catch (Throwable ignored) {
+                }
+            } else {
+                try {
+                    Thread.sleep(20);
+                } catch (InterruptedException ignored) {
+                }
+            }
         }
     }
 
@@ -167,7 +207,7 @@ public final class Sound {
     // ------------------------------------------------------------- музыка
 
     /** Синтез-вэйв луп: бас + арпеджио + пэд, 8 тактов по 130 BPM. */
-    private static short[] genMusic() {
+    private static float[] genMusic() {
         int bpm = 130;
         int beat = RATE * 60 / bpm;         // сэмплов на долю
         int bar = beat * 4;                 // такт
@@ -214,11 +254,7 @@ public final class Sound {
             addNote(mix, e * beat / 2, 900, 0, 0.020f, 3);
         }
 
-        short[] out = new short[total];
-        for (int i = 0; i < total; i++) {
-            out[i] = (short) Math.max(-1f, Math.min(1f, mix[i]));
-        }
-        return out;
+        return mix;
     }
 
     private static void addNote(float[] mix, int start, int len, float freq,
@@ -259,8 +295,13 @@ public final class Sound {
             thread = null;
         }
         if (track != null) {
-            track.stop();
-            track.release();
+            try {
+                if (track.getState() == AudioTrack.STATE_INITIALIZED) {
+                    track.stop();
+                }
+                track.release();
+            } catch (Throwable ignored) {
+            }
             track = null;
         }
     }
