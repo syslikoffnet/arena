@@ -283,6 +283,7 @@ public final class GLUtil {
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
         p.setColor(0xFF541C0E);
         p.setStrokeWidth(5f);
+        RectF rect = new RectF();
 
         for (int y = 0; y < S; y += 32) {
             c.drawLine(0, y, S, y, p);

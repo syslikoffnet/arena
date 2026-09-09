@@ -172,6 +172,16 @@ public final class ModelGenerator {
     public static Mesh firstAidMesh;
     public static Mesh energyDrinkMesh;
 
+    // Совместимость с Weapon.java
+    public static Mesh akrMesh;
+    public static Mesh m4Mesh;
+    public static Mesh deagleMesh;
+    public static Mesh mp5Mesh;
+    public static Mesh shotgunMesh;
+    public static Mesh rpgMesh;
+    public static Mesh knifeMesh;
+    public static Mesh grenadeMesh;
+
     public static void init() {
         boxMesh = new Builder().addBox(0, 0, 0, 1, 1, 1, 1, 1).build();
         groundMesh = new Builder().addQuad(-400, 0, 400, 400, 0, 400, 400, 0, -400, -400, 0, -400, 0, 1, 0, 80, 80).build();
@@ -206,6 +216,15 @@ public final class ModelGenerator {
         awmMesh = buildAWM();
         firstAidMesh = buildFirstAid();
         energyDrinkMesh = new Builder().addCylinder(0, 0, 0, 0.08f, 0.22f, 10, true).build();
+
+        akrMesh = akmMesh;
+        m4Mesh = m416Mesh;
+        deagleMesh = new Builder().addBox(0, 0, 0, 0.06f, 0.12f, 0.24f, 1, 1).build();
+        mp5Mesh = new Builder().addBox(0, 0, 0, 0.06f, 0.14f, 0.36f, 1, 1).build();
+        shotgunMesh = new Builder().addBox(0, 0, 0, 0.07f, 0.12f, 0.60f, 1, 1).build();
+        rpgMesh = new Builder().addCylinder(0, 0, 0, 0.08f, 0.85f, 10, false).build();
+        knifeMesh = panMesh;
+        grenadeMesh = new Builder().addBox(0, 0, 0, 0.10f, 0.14f, 0.10f, 1, 1).build();
     }
 
     // ------------------------------------------------------------- 3D Персонаж
