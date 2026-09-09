@@ -3,42 +3,60 @@ package com.syslikoffnet.overglow;
 import android.app.Activity;
 import android.os.Bundle;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.widget.FrameLayout;
 
 /**
- * Единственная активити: фуллскрин, без гашения экрана, immersive.
+ * Главная Активити: полноэкранный режим (Immersive Fullscreen),
+ * интеграция 3D OpenGL ES рендерера и 2D тактического HUD оверлея.
  */
 public class GameActivity extends Activity {
 
-    private GameView view;
+    private FPSGame game;
+    private GLView glView;
+    private HUDOverlayView hudView;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        S.applyLang(this);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        view = new GameView(this);
-        setContentView(view);
+
+        game = new FPSGame(this);
+        glView = new GLView(this, game);
+        hudView = new HUDOverlayView(this, game);
+
+        FrameLayout root = new FrameLayout(this);
+        root.setLayoutParams(new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+
+        root.addView(glView);
+        root.addView(hudView);
+
+        setContentView(root);
         hideBars();
-        Sound.init(this);
     }
 
     @Override
     protected void onResume() {
         super.onResume();
         hideBars();
-        view.onResume();
+        if (glView != null) glView.onResume();
     }
 
     @Override
     protected void onPause() {
-        view.onPause();
+        if (glView != null) glView.onPause();
+        if (game != null && game.state == FPSGame.STATE_PLAYING) {
+            game.state = FPSGame.STATE_PAUSE;
+        }
         super.onPause();
     }
 
     @Override
     protected void onDestroy() {
-        Sound.destroy();
+        SoundSynth3D.destroy();
         super.onDestroy();
     }
 
@@ -50,18 +68,18 @@ public class GameActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (view == null || view.game == null) {
+        if (game == null) {
             super.onBackPressed();
             return;
         }
-        int st = view.game.state;
-        if (st == Game.ST_PLAY) {
-            view.game.state = Game.ST_PAUSE;
-            view.game.input.reset();
-        } else if (st == Game.ST_LEVELUP) {
-            // выбор усиления обязателен — не выходим
-        } else if (st != Game.ST_TITLE) {
-            view.game.onButton(Game.B_BACK);
+
+        if (game.state == FPSGame.STATE_PLAYING) {
+            game.state = FPSGame.STATE_PAUSE;
+        } else if (game.state == FPSGame.STATE_PAUSE ||
+                   game.state == FPSGame.STATE_INVENTORY ||
+                   game.state == FPSGame.STATE_SETTINGS ||
+                   game.state == FPSGame.STATE_END) {
+            game.state = FPSGame.STATE_MENU;
         } else {
             super.onBackPressed();
         }
