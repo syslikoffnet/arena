@@ -1,0 +1,45 @@
+# Облачная сборка APK через GitHub Actions.
+#
+# Использует профиль по умолчанию: Gradle 9.0.0 + AGP 8.13.0 + JDK 17.
+# (Профиль «androidide» из scripts/switch-profile.sh для CI не нужен.)
+#
+# Файл лежит в ci/, потому что токен агента не имеет права создавать
+# .github/workflows/ в репозитории. Чтобы включить CI:
+#   1. Откройте репозиторий на GitHub → Add file → Create new file
+#   2. Имя: .github/workflows/build-apk.yml
+#   3. Скопируйте содержимое этого файла, закоммитьте
+#   4. Вкладка Actions → Build APK → готовый app-debug.apk появится в артефактах
+
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Build debug APK
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Overglow-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

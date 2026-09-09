@@ -1,0 +1,7 @@
+[versions]
+# AGP 8.13.0 + Gradle 9.0.0 — рабочая связка, проверенная сборкой на телефоне
+# (см. my_project в ветке main). AGP 8.13 требует Gradle >= 8.13 и работает на 9.x.
+agp = "8.13.0"
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
