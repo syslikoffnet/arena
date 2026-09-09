@@ -14,6 +14,7 @@ import java.util.ArrayList;
  * - Лобби с 1-в-1 интерфейсом, выбором карт (Erangel, Miramar, Sanhok, Livik) и Royale Pass
  * - Полноценный матч: Остров ожидания -> Полет на самолете -> Прыжок и парашют ->
  *   Сбор лута в домах -> Открытие дверей -> Вождение транспорта -> Сужение зоны -> Победа #1!
+ * - Профессиональный гироскоп (Gyroscope Aiming) для идеальной доводки прицела
  */
 public final class PUBGGame {
 
@@ -32,6 +33,7 @@ public final class PUBGGame {
     public final ParticleSystem particles = new ParticleSystem();
     public final PUBGTouchHUD touchHUD = new PUBGTouchHUD();
     public final PUBGLobbyUI lobbyUI = new PUBGLobbyUI();
+    public final PUBGGyroscope gyroscope = new PUBGGyroscope();
 
     public float matchingTimer = 0f;
     public float matchTimer = 0f;
@@ -43,6 +45,7 @@ public final class PUBGGame {
     public PUBGGame(Context ctx) {
         this.context = ctx;
         SoundSynth3D.init(ctx);
+        gyroscope.init(ctx);
     }
 
     public void startMatchmaking() {
@@ -90,6 +93,10 @@ public final class PUBGGame {
 
         matchTimer += dt;
         map.update(dt);
+
+        // Применение наклонов гироскопа к прицеливанию
+        gyroscope.applyToPlayer(player);
+
         player.update(dt, map, touchHUD.moveX, touchHUD.moveZ);
 
         if (player.moveMode == PUBGPlayer.MODE_DRIVING && player.currentVehicle != null) {

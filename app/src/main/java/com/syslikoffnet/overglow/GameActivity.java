@@ -9,7 +9,7 @@ import android.widget.FrameLayout;
 
 /**
  * Главная Активити PUBG Mobile: полноэкранный ландшафтный режим,
- * 3D рендерер OpenGL ES и 2D оверлей интерфейса.
+ * 3D рендерер OpenGL ES, 2D оверлей интерфейса и аппаратный гироскоп.
  */
 public class GameActivity extends Activity {
 
@@ -43,16 +43,25 @@ public class GameActivity extends Activity {
         super.onResume();
         hideBars();
         if (glView != null) glView.onResume();
+        if (game != null && game.gyroscope != null) {
+            game.gyroscope.start();
+        }
     }
 
     @Override
     protected void onPause() {
+        if (game != null && game.gyroscope != null) {
+            game.gyroscope.stop();
+        }
         if (glView != null) glView.onPause();
         super.onPause();
     }
 
     @Override
     protected void onDestroy() {
+        if (game != null && game.gyroscope != null) {
+            game.gyroscope.stop();
+        }
         SoundSynth3D.destroy();
         super.onDestroy();
     }
