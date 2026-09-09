@@ -3,12 +3,10 @@ package com.syslikoffnet.overglow;
 import java.util.ArrayList;
 
 /**
- * Игрок PUBG Mobile (Unreal Engine 4 Architecture):
- * - USpringArmComponent & Orbit Camera System
- * - Полет на самолете C-130, свободное падение (Freefall), парашют
- * - Вид от 3-го лица (TPP) и 1-го лица (FPP), кнопка свободного обзора ("Глаз")
- * - Вождение транспорта, открытие дверей, сбор лута на полу
- * - Рюкзак, шлем, бронежилет, аптечки, энергетики, сковорода на пояснице
+ * Игрок PUBG Mobile (Плавная физика полета, ходьбы и баллистики):
+ * - Интуитивное управление свободным падением (Freefall) и планированием на парашюте
+ * - Точное движение вперед/назад/влево/вправо по направлению взгляда камеры
+ * - Поддержка TPP / FPP, прицеливания (ADS), вождения и сбора лута
  */
 public final class PUBGPlayer {
 
@@ -80,7 +78,7 @@ public final class PUBGPlayer {
         moveMode = MODE_FREEFALL;
         pos.set(planePos);
         yaw = planeYaw;
-        pitch = 30f;
+        pitch = -25f; // направлен вперед-вниз
         altitude = planePos.y;
         vel.set(0, -35f, 0);
         SoundSynth3D.play2D(SoundSynth3D.SOUND_EXPLOSION, 0.5f);
@@ -147,12 +145,19 @@ public final class PUBGPlayer {
     }
 
     private void updateFreefall(float dt, PUBGMap map, float moveX, float moveZ) {
-        float speed = (pitch > 45f) ? 220f : 160f;
-        fallSpeed = speed;
+        // Управление скоростью пикирования от угла наклона камеры
+        float targetSpeed = (pitch < -40f) ? 234f : ((pitch < -15f) ? 180f : 135f);
+        fallSpeed = Math3D.lerp(fallSpeed, targetSpeed, dt * 4f);
 
         float rad = yaw * Math3D.TO_RAD;
-        vel.x = -(float) Math.sin(rad) * (moveZ * 20f);
-        vel.z = (float) Math.cos(rad) * (moveZ * 20f);
+        float forwardSpd = (pitch > -35f) ? 42f : 18f;
+
+        // Планирование в сторону взгляда камеры + руление джойстиком
+        float targetVelX = (float) Math.sin(rad) * (moveZ * forwardSpd + 20f) + (float) Math.cos(rad) * (moveX * 28f);
+        float targetVelZ = (float) Math.cos(rad) * (moveZ * forwardSpd + 20f) - (float) Math.sin(rad) * (moveX * 28f);
+
+        vel.x = Math3D.lerp(vel.x, targetVelX, dt * 5f);
+        vel.z = Math3D.lerp(vel.z, targetVelZ, dt * 5f);
         vel.y = -(fallSpeed / 3.6f);
 
         pos.x += vel.x * dt;
@@ -168,12 +173,15 @@ public final class PUBGPlayer {
     }
 
     private void updateParachute(float dt, PUBGMap map, float moveX, float moveZ) {
-        fallSpeed = 25f;
+        fallSpeed = 24f;
 
         float rad = yaw * Math3D.TO_RAD;
-        vel.x = -(float) Math.sin(rad) * 12f;
-        vel.z = (float) Math.cos(rad) * 12f;
-        vel.y = -7.5f;
+        float targetVelX = (float) Math.sin(rad) * (moveZ * 14f + 8f) + (float) Math.cos(rad) * (moveX * 14f);
+        float targetVelZ = (float) Math.cos(rad) * (moveZ * 14f + 8f) - (float) Math.sin(rad) * (moveX * 14f);
+
+        vel.x = Math3D.lerp(vel.x, targetVelX, dt * 8f);
+        vel.z = Math3D.lerp(vel.z, targetVelZ, dt * 8f);
+        vel.y = -6.5f;
 
         pos.x += vel.x * dt;
         pos.y += vel.y * dt;
@@ -197,10 +205,13 @@ public final class PUBGPlayer {
         float sin = (float) Math.sin(rad);
         float cos = (float) Math.cos(rad);
 
-        float forwardX = -sin * moveZ;
+        // Вперед/Назад по взгляду (moveZ: +1 = вперед, -1 = назад)
+        float forwardX = sin * moveZ;
         float forwardZ = cos * moveZ;
+
+        // Влево/Вправо (moveX: +1 = вправо, -1 = влево)
         float strafeX = cos * moveX;
-        float strafeZ = sin * moveX;
+        float strafeZ = -sin * moveX;
 
         vel.x = Math3D.lerp(vel.x, (forwardX + strafeX) * speed, dt * 14f);
         vel.z = Math3D.lerp(vel.z, (forwardZ + strafeZ) * speed, dt * 14f);

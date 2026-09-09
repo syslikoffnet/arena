@@ -12,18 +12,17 @@ import android.view.MotionEvent;
 import java.util.ArrayList;
 
 /**
- * Высокодетализированный 1-в-1 тактический интерфейс и HUD PUBG Mobile:
- * - Аутентичные векторные кнопки (Огонь с пулей, Прицел со сеткой, Наклоны Peek Q/E,
- *   Прыжок, Присед, Положение лёжа, Педали Газ/Тормоз, Клаксон)
- * - 360° Компас с засечками и сторонами света (N, NE, E, SE, S, SW, W, NW)
- * - Интерактивный список ближайшего лута (Proximity Loot) с иконками калибров
- * - Мини-карта с радаром шагов, выстрелов и кругами зоны
+ * Высокодетализированный 1-в-1 тактический интерфейс и отзывчивое управление PUBG Mobile:
+ * - Плавный виртуальный джойстик ходьбы и свободного полета (Left Thumb)
+ * - Естественный 360° обзор камеры и прицеливания (Right Thumb)
+ * - Полноценное управление полетом при прыжке из самолета (пикирование, планирование)
+ * - Тактические кнопки стрельбы, наклонов, прицела, смены стоек и транспорта
  */
 public final class PUBGTouchHUD {
 
-    // Чувствительность
-    public float sensitivityX = 0.22f;
-    public float sensitivityY = 0.20f;
+    // Чувствительность обзора
+    public float sensitivityX = 0.24f;
+    public float sensitivityY = 0.22f;
 
     // Ввод движения и транспорта
     public float moveX = 0, moveZ = 0;
@@ -64,6 +63,7 @@ public final class PUBGTouchHUD {
             renderPlaneFlightHUD(c, w, h, map);
         } else if (player.moveMode == PUBGPlayer.MODE_FREEFALL || player.moveMode == PUBGPlayer.MODE_PARACHUTE) {
             renderSkydivingHUD(c, w, h, player);
+            renderJoystick(c);
         } else if (player.moveMode == PUBGPlayer.MODE_DRIVING) {
             renderDrivingHUD(c, w, h, player);
         } else {
@@ -82,6 +82,7 @@ public final class PUBGTouchHUD {
         renderHealthAndBoost(c, w, h, player);
         renderWeaponSlots(c, w, h, player);
         renderRealisticTouchButtons(c, w, h, player, map);
+        renderJoystick(c);
 
         if (player.adsFactor > 0.85f && player.getActiveWeapon() != null && player.getActiveWeapon().adsZoom > 3f) {
             renderScope(c, w, h);
@@ -90,9 +91,24 @@ public final class PUBGTouchHUD {
         }
     }
 
+    private void renderJoystick(Canvas c) {
+        if (stickPointerId != -1) {
+            pFill.setStyle(Paint.Style.FILL);
+            pFill.setColor(0x4400E5FF);
+            c.drawCircle(stickStartX, stickStartY, 70, pFill);
+
+            pStroke.setStyle(Paint.Style.STROKE);
+            pStroke.setColor(0x8800E5FF);
+            pStroke.setStrokeWidth(2f);
+            c.drawCircle(stickStartX, stickStartY, 70, pStroke);
+
+            pFill.setColor(0xCC00E5FF);
+            c.drawCircle(stickCurX, stickCurY, 32, pFill);
+        }
+    }
+
     // ------------------------------------------------------------- 1. Компас и Счётчики
     private void renderTopHeader(Canvas c, int w, int h, PUBGPlayer player, int aliveCount) {
-        // ALIVE & KILLS
         pFill.setStyle(Paint.Style.FILL);
         pFill.setColor(0xCC0F1722);
         rect.set(24, 15, 240, 62);
@@ -123,7 +139,6 @@ public final class PUBGTouchHUD {
 
         float yaw = (player.yaw % 360 + 360) % 360;
 
-        // Насечки градусов
         pStroke.setColor(0x88FFFFFF);
         for (int d = -60; d <= 60; d += 15) {
             float lineX = cx + (d * 3.2f);
@@ -167,22 +182,19 @@ public final class PUBGTouchHUD {
         pStroke.setStrokeWidth(2.5f);
         c.drawCircle(mx, my, r, pStroke);
 
-        // Белый круг безопасной зоны
         pStroke.setColor(0xFFFFFFFF);
         pStroke.setStrokeWidth(2f);
         c.drawCircle(mx, my, r * (map.whiteZoneRadius / 300f), pStroke);
 
-        // Синяя стена зоны
         pStroke.setColor(0xFF00B0FF);
         pStroke.setStrokeWidth(3f);
         c.drawCircle(mx, my, r * (map.blueZoneRadius / 300f), pStroke);
 
-        // Игрок в центре со стрелкой взгляда
         pFill.setColor(0xFFFFD700);
         c.drawCircle(mx, my, 5, pFill);
 
-        float rad = -player.yaw * Math3D.TO_RAD;
-        c.drawLine(mx, my, mx + (float) Math.sin(-rad) * 12, my - (float) Math.cos(-rad) * 12, pStroke);
+        float rad = player.yaw * Math3D.TO_RAD;
+        c.drawLine(mx, my, mx + (float) Math.sin(rad) * 12, my - (float) Math.cos(rad) * 12, pStroke);
     }
 
     // ------------------------------------------------------------- 3. Лут рядом
@@ -226,17 +238,14 @@ public final class PUBGTouchHUD {
         rect.set(startX - 12, startY - 26, startX + barW + 12, startY + 26);
         c.drawRoundRect(rect, 8, 8, pFill);
 
-        // Буст (Оранжевый)
         pFill.setColor(0xFFFF9800);
         rect.set(startX, startY - 20, startX + (barW * (player.boost / 100f)), startY - 8);
         c.drawRoundRect(rect, 3, 3, pFill);
 
-        // Здоровье (Белый / Красный при <25%)
         pFill.setColor(player.health > 25 ? 0xFFECEFF1 : 0xFFFF1744);
         rect.set(startX, startY - 4, startX + (barW * (player.health / 100f)), startY + 16);
         c.drawRoundRect(rect, 4, 4, pFill);
 
-        // Шлем и Броня иконки рядом
         pText.setColor(0xFF00E5FF);
         pText.setTextSize(14);
         pText.setFakeBoldText(true);
@@ -256,186 +265,140 @@ public final class PUBGTouchHUD {
 
     private void renderSingleSlot(Canvas c, float x, float y, float w, float h, Weapon wep, boolean active, String prefix) {
         pFill.setStyle(Paint.Style.FILL);
-        pFill.setColor(active ? 0xDD243547 : 0xAA111822);
+        pFill.setColor(active ? 0xDD1E2F44 : 0x880A1018);
         rect.set(x, y, x + w, y + h);
-        c.drawRoundRect(rect, 6, 6, pFill);
+        c.drawRoundRect(rect, 8, 8, pFill);
 
         pStroke.setStyle(Paint.Style.STROKE);
         pStroke.setColor(active ? 0xFFFFB300 : 0x44FFFFFF);
-        pStroke.setStrokeWidth(active ? 2.5f : 1f);
-        c.drawRoundRect(rect, 6, 6, pStroke);
+        pStroke.setStrokeWidth(active ? 2.5f : 1.5f);
+        c.drawRoundRect(rect, 8, 8, pStroke);
 
-        pText.setColor(active ? 0xFFFFB300 : 0xFFFFFFFF);
-        pText.setTextSize(17);
-        pText.setFakeBoldText(true);
         if (wep != null) {
-            c.drawText(prefix + wep.name, x + 10, y + 26, pText);
-            pText.setColor(0xFF00E5FF);
-            pText.setTextSize(15);
-            c.drawText(wep.ammoInMag + " / " + wep.ammoReserve + "  AUTO", x + 10, y + 48, pText);
-        } else {
-            c.drawText(prefix + "EMPTY", x + 10, y + 36, pText);
-        }
-    }
+            pText.setColor(0xFFFFFFFF);
+            pText.setTextSize(16);
+            pText.setFakeBoldText(true);
+            c.drawText(prefix + wep.name, x + 10, y + 24, pText);
 
-    // ------------------------------------------------------------- 6. Кнопки PUBG
-    private void renderRealisticTouchButtons(Canvas c, int w, int h, PUBGPlayer player, PUBGMap map) {
-        // Левый аналоговый джойстик с автоспринтом
-        if (stickPointerId != -1) {
-            pStroke.setStyle(Paint.Style.STROKE);
-            pStroke.setColor(0x55FFFFFF);
-            pStroke.setStrokeWidth(3f);
-            c.drawCircle(stickStartX, stickStartY, h * 0.14f, pStroke);
-
-            // Иконка бегущего человечка (Спринт) сверху
-            pText.setColor(0xFFFFB300);
+            pText.setColor(0xFFFFD700);
             pText.setTextSize(18);
-            c.drawText("🔒 SPRINT", stickStartX - 38, stickStartY - (h * 0.15f), pText);
-
-            pFill.setStyle(Paint.Style.FILL);
-            pFill.setColor(0xEE00E5FF);
-            c.drawCircle(stickCurX, stickCurY, 34, pFill);
+            c.drawText(wep.ammoInMag + " / " + wep.ammoReserve, x + 10, y + 48, pText);
+        } else {
+            pText.setColor(0x66FFFFFF);
+            pText.setTextSize(14);
+            c.drawText(prefix + "EMPTY", x + 12, y + 34, pText);
         }
-
-        // 1. Главная кнопка ОГНЯ (Правая) - Векторная пуля и дульная вспышка
-        drawFireButton(c, w * 0.85f, h * 0.70f, 56, btnFire);
-
-        // 2. Левая кнопка ОГНЯ (под указательный палец Claw)
-        drawFireButton(c, w * 0.12f, h * 0.35f, 45, btnFireLeft);
-
-        // 3. Кнопка Прицела (ADS Scope с сеткой)
-        drawScopeButton(c, w * 0.88f, h * 0.42f, 44, player.isAiming);
-
-        // 4. Наклоны (Peek Left & Right Q / E)
-        drawLeanButton(c, w * 0.72f, h * 0.40f, 34, "◀", player.leanAngle < -5f);
-        drawLeanButton(c, w * 0.79f, h * 0.40f, 34, "▶", player.leanAngle > 5f);
-
-        // 5. Прыжок, Присед, Лечь (Prone)
-        drawTacticalStanceBtn(c, w * 0.92f, h * 0.88f, 38, "JUMP ⬆", btnJump);
-        drawTacticalStanceBtn(c, w * 0.80f, h * 0.88f, 38, "CROUCH 🧎", player.isCrouching);
-        drawTacticalStanceBtn(c, w * 0.68f, h * 0.88f, 38, "PRONE 🛌", player.isProning);
-
-        // 6. Перезарядка
-        drawTacticalStanceBtn(c, w * 0.72f, h * 0.52f, 36, "RELOAD 🔄", btnReload);
-
-        // 7. Кнопка "Дверь / Войти в транспорт"
-        drawDoorVehicleBtn(c, w * 0.75f, h * 0.28f, 42);
-
-        // 8. Кнопка Аптечки и Энергетика
-        drawMedkitQuickBtn(c, w * 0.24f, h * 0.88f, 38, "🩹 " + player.firstAidCount);
-
-        // 9. Кнопка "Глаз" (Free-Look 360°)
-        drawEyeButton(c, w * 0.75f, h * 0.16f, 32, player.isFreeLooking);
     }
 
-    private void drawFireButton(Canvas c, float cx, float cy, float r, boolean active) {
+    // ------------------------------------------------------------- 6. Тактические кнопки
+    private void renderRealisticTouchButtons(Canvas c, int w, int h, PUBGPlayer player, PUBGMap map) {
+        // Огонь справа (Правый палец)
+        drawBulletFireButton(c, w * 0.86f, h * 0.70f, 62, btnFire);
+
+        // Огонь слева (Левый указательный палец)
+        drawBulletFireButton(c, w * 0.12f, h * 0.35f, 48, btnFireLeft);
+
+        // Прицел (ADS Scope)
+        drawOpticScopeButton(c, w * 0.88f, h * 0.42f, 48, player.isAiming);
+
+        // Наклоны (Peek Q / E)
+        drawPeekButton(c, w * 0.78f, h * 0.35f, 38, "◀ Q", player.leanAngle < -5f);
+        drawPeekButton(c, w * 0.78f, h * 0.46f, 38, "▶ E", player.leanAngle > 5f);
+
+        // Стойки: Прыжок, Присед, Лечь
+        drawTacticalStanceBtn(c, w * 0.92f, h * 0.88f, 42, "⬆", btnJump);
+        drawTacticalStanceBtn(c, w * 0.80f, h * 0.88f, 42, "🧎", player.isCrouching);
+        drawTacticalStanceBtn(c, w * 0.68f, h * 0.88f, 42, "🛌", player.isProning);
+
+        // Перезарядка
+        drawTacticalStanceBtn(c, w * 0.74f, h * 0.55f, 38, "🔄", btnReload);
+
+        // Взаимодействие (Двери / Машины)
+        drawTacticalStanceBtn(c, w * 0.76f, h * 0.28f, 40, "🚪 / 🚗", false);
+
+        // Быстрое лечение
+        drawHealShortcut(c, w * 0.25f, h * 0.88f, player);
+    }
+
+    private void drawBulletFireButton(Canvas c, float cx, float cy, float r, boolean active) {
         pFill.setStyle(Paint.Style.FILL);
-        pFill.setColor(active ? 0xEEFF9800 : 0xAA111822);
+        pFill.setColor(active ? 0xEEFF5722 : 0xAA111822);
         c.drawCircle(cx, cy, r, pFill);
 
         pStroke.setStyle(Paint.Style.STROKE);
-        pStroke.setColor(active ? 0xFFFFD700 : 0x88FFFFFF);
+        pStroke.setColor(active ? 0xFFFFEB3B : 0x88FFFFFF);
         pStroke.setStrokeWidth(3f);
         c.drawCircle(cx, cy, r, pStroke);
 
-        // Рисование пули в центре
-        pFill.setColor(0xFFFFD700);
-        rect.set(cx - 8, cy - 14, cx + 8, cy + 14);
-        c.drawRoundRect(rect, 4, 4, pFill);
-
-        pFill.setColor(0xFFFF5722);
-        c.drawCircle(cx, cy - 18, 5, pFill);
+        pText.setColor(0xFFFFD700);
+        pText.setTextSize(active ? 34 : 30);
+        pText.setFakeBoldText(true);
+        c.drawText("🔥", cx - 15, cy + 10, pText);
     }
 
-    private void drawScopeButton(Canvas c, float cx, float cy, float r, boolean active) {
+    private void drawOpticScopeButton(Canvas c, float cx, float cy, float r, boolean active) {
         pFill.setStyle(Paint.Style.FILL);
         pFill.setColor(active ? 0xEE00E5FF : 0xAA111822);
         c.drawCircle(cx, cy, r, pFill);
 
         pStroke.setStyle(Paint.Style.STROKE);
         pStroke.setColor(active ? 0xFFFFFFFF : 0x8800E5FF);
-        pStroke.setStrokeWidth(2.5f);
-        c.drawCircle(cx, cy, r * 0.7f, pStroke);
-
-        // Перекрестие
-        c.drawLine(cx - r * 0.6f, cy, cx + r * 0.6f, cy, pStroke);
-        c.drawLine(cx, cy - r * 0.6f, cx, cy + r * 0.6f, pStroke);
-    }
-
-    private void drawLeanButton(Canvas c, float cx, float cy, float r, String arrow, boolean active) {
-        pFill.setStyle(Paint.Style.FILL);
-        pFill.setColor(active ? 0xEEFFB300 : 0x88111822);
-        c.drawCircle(cx, cy, r, pFill);
-
-        pStroke.setStyle(Paint.Style.STROKE);
-        pStroke.setColor(0x88FFFFFF);
-        pStroke.setStrokeWidth(1.5f);
+        pStroke.setStrokeWidth(3f);
         c.drawCircle(cx, cy, r, pStroke);
 
-        pText.setColor(0xFFFFFFFF);
-        pText.setTextSize(18);
+        pText.setColor(active ? 0xFF000000 : 0xFF00E5FF);
+        pText.setTextSize(26);
         pText.setFakeBoldText(true);
-        c.drawText("PEEK " + arrow, cx - 22, cy + 6, pText);
+        c.drawText("🎯", cx - 14, cy + 9, pText);
     }
 
-    private void drawTacticalStanceBtn(Canvas c, float cx, float cy, float r, String text, boolean active) {
+    private void drawPeekButton(Canvas c, float cx, float cy, float r, String text, boolean active) {
         pFill.setStyle(Paint.Style.FILL);
-        pFill.setColor(active ? 0xEEFF9800 : 0x88111822);
+        pFill.setColor(active ? 0xDD00E5FF : 0x88111822);
         c.drawCircle(cx, cy, r, pFill);
 
         pStroke.setStyle(Paint.Style.STROKE);
-        pStroke.setColor(active ? 0xFFFFD700 : 0x55FFFFFF);
-        pStroke.setStrokeWidth(2f);
-        c.drawCircle(cx, cy, r, pStroke);
-
-        pText.setColor(0xFFFFFFFF);
-        pText.setTextSize(12);
-        pText.setFakeBoldText(true);
-        float tw = pText.measureText(text);
-        c.drawText(text, cx - tw / 2f, cy + 4, pText);
-    }
-
-    private void drawDoorVehicleBtn(Canvas c, float cx, float cy, float r) {
-        pFill.setStyle(Paint.Style.FILL);
-        pFill.setColor(0xDD162230);
-        c.drawCircle(cx, cy, r, pFill);
-
-        pStroke.setStyle(Paint.Style.STROKE);
-        pStroke.setColor(0xFFFFB300);
-        pStroke.setStrokeWidth(2f);
-        c.drawCircle(cx, cy, r, pStroke);
-
-        pText.setColor(0xFFFFB300);
-        pText.setTextSize(14);
-        pText.setFakeBoldText(true);
-        c.drawText("DRIVE / OPEN", cx - 42, cy - 2, pText);
-        c.drawText("🚪 / 🚗", cx - 20, cy + 18, pText);
-    }
-
-    private void drawMedkitQuickBtn(Canvas c, float cx, float cy, float r, String label) {
-        pFill.setStyle(Paint.Style.FILL);
-        pFill.setColor(0xDD162230);
-        c.drawCircle(cx, cy, r, pFill);
-
-        pStroke.setStyle(Paint.Style.STROKE);
-        pStroke.setColor(0xFF00E676);
+        pStroke.setColor(0x66FFFFFF);
         pStroke.setStrokeWidth(2f);
         c.drawCircle(cx, cy, r, pStroke);
 
         pText.setColor(0xFFFFFFFF);
         pText.setTextSize(14);
         pText.setFakeBoldText(true);
-        c.drawText(label, cx - 24, cy + 5, pText);
+        c.drawText(text, cx - 12, cy + 5, pText);
     }
 
-    private void drawEyeButton(Canvas c, float cx, float cy, float r, boolean active) {
+    private void drawTacticalStanceBtn(Canvas c, float cx, float cy, float r, String icon, boolean active) {
         pFill.setStyle(Paint.Style.FILL);
         pFill.setColor(active ? 0xEE00E5FF : 0x88111822);
         c.drawCircle(cx, cy, r, pFill);
 
+        pStroke.setStyle(Paint.Style.STROKE);
+        pStroke.setColor(0x66FFFFFF);
+        pStroke.setStrokeWidth(2f);
+        c.drawCircle(cx, cy, r, pStroke);
+
+        pText.setColor(active ? 0xFF000000 : 0xFFFFFFFF);
+        pText.setTextSize(20);
+        pText.setFakeBoldText(true);
+        float tw = pText.measureText(icon);
+        c.drawText(icon, cx - tw / 2f, cy + 7, pText);
+    }
+
+    private void drawHealShortcut(Canvas c, float cx, float cy, PUBGPlayer player) {
+        pFill.setStyle(Paint.Style.FILL);
+        pFill.setColor(0xCC0F1722);
+        c.drawCircle(cx, cy, 40, pFill);
+
+        pStroke.setStyle(Paint.Style.STROKE);
+        pStroke.setColor(0xFF00E676);
+        pStroke.setStrokeWidth(2.5f);
+        c.drawCircle(cx, cy, 40, pStroke);
+
         pText.setColor(0xFFFFFFFF);
         pText.setTextSize(18);
-        c.drawText("👁", cx - 8, cy + 6, pText);
+        pText.setFakeBoldText(true);
+        c.drawText("🩹 x" + player.firstAidCount, cx - 22, cy + 6, pText);
     }
 
     // ------------------------------------------------------------- 7. Полет / Парашют
@@ -481,19 +444,14 @@ public final class PUBGTouchHUD {
 
     // ------------------------------------------------------------- 8. Вождение
     private void renderDrivingHUD(Canvas c, int w, int h, PUBGPlayer player) {
-        // Педаль Газа (Gas)
         drawPedalBtn(c, w * 0.88f, h * 0.70f, 60, "GAS", true);
-        // Педаль Тормоза (Brake)
         drawPedalBtn(c, w * 0.74f, h * 0.76f, 48, "BRAKE", false);
 
-        // Руль Влево / Вправо
         drawSteerBtn(c, w * 0.10f, h * 0.70f, 52, "◀");
         drawSteerBtn(c, w * 0.24f, h * 0.70f, 52, "▶");
 
-        // Выйти из машины
         drawTacticalStanceBtn(c, w * 0.86f, h * 0.34f, 46, "EXIT 🚪", false);
 
-        // Спидометр по центру
         if (player.currentVehicle != null) {
             float cx = w / 2f;
             pText.setColor(0xFFFFD700);
@@ -618,36 +576,47 @@ public final class PUBGTouchHUD {
             return;
         }
 
+        // Кнопки стрельбы и прицела
         if (rx > 0.78f && rx < 0.94f && ry > 0.55f && ry < 0.85f) { btnFire = true; return; }
         if (rx < 0.22f && ry > 0.20f && ry < 0.50f) { btnFireLeft = true; return; }
-
         if (rx > 0.82f && ry > 0.32f && ry < 0.52f) { player.isAiming = !player.isAiming; return; }
 
+        // Наклоны Peek Q/E
+        if (rx > 0.74f && rx < 0.84f && ry > 0.30f && ry < 0.40f) { player.leanAngle = (player.leanAngle < -5f) ? 0f : -15f; return; }
+        if (rx > 0.74f && rx < 0.84f && ry > 0.40f && ry < 0.50f) { player.leanAngle = (player.leanAngle > 5f) ? 0f : 15f; return; }
+
+        // Стойки
         if (rx > 0.86f && ry > 0.80f) { btnJump = true; return; }
         if (rx > 0.74f && rx < 0.86f && ry > 0.80f) { player.isCrouching = !player.isCrouching; player.isProning = false; return; }
         if (rx > 0.62f && rx < 0.74f && ry > 0.80f) { player.isProning = !player.isProning; player.isCrouching = false; return; }
 
-        if (rx > 0.68f && rx < 0.78f && ry > 0.46f && ry < 0.58f) { btnReload = true; return; }
+        // Перезарядка
+        if (rx > 0.68f && rx < 0.78f && ry > 0.50f && ry < 0.62f) { btnReload = true; return; }
 
+        // Интерактив
         if (rx > 0.70f && rx < 0.82f && ry > 0.22f && ry < 0.35f) {
             player.interactDoors(map);
             player.enterExitVehicle(map);
             return;
         }
 
+        // Лечение
         if (rx > 0.20f && rx < 0.30f && ry > 0.80f) { player.useMedkit(); return; }
 
+        // Смена слотов оружия
         if (rx > 0.35f && rx < 0.50f && ry > 0.80f) { player.activeSlot = 0; return; }
         if (rx > 0.50f && rx < 0.65f && ry > 0.80f) { player.activeSlot = 1; return; }
 
-        if (x < screenW * 0.45f && stickPointerId == -1) {
+        // Левая половина экрана: Виртуальный джойстик (Left Thumb)
+        if (x < screenW * 0.48f && stickPointerId == -1) {
             stickPointerId = id;
             stickStartX = x; stickStartY = y;
             stickCurX = x; stickCurY = y;
             return;
         }
 
-        if (x >= screenW * 0.45f && lookPointerId == -1) {
+        // Правая половина экрана: Обзор камеры (Right Thumb)
+        if (x >= screenW * 0.48f && lookPointerId == -1) {
             lookPointerId = id;
             lastLookX = x;
             lastLookY = y;
@@ -659,18 +628,20 @@ public final class PUBGTouchHUD {
             stickCurX = x; stickCurY = y;
             float dx = stickCurX - stickStartX;
             float dy = stickCurY - stickStartY;
-            float maxR = screenH * 0.14f;
+            float maxR = screenH * 0.12f;
             float len = (float) Math.sqrt(dx * dx + dy * dy);
             if (len > maxR) { dx = (dx / len) * maxR; dy = (dy / len) * maxR; }
             moveX = dx / maxR;
-            moveZ = -dy / maxR;
+            moveZ = -dy / maxR; // Вверх по экрану = вперед (+moveZ)
         } else if (id == lookPointerId) {
             float dx = x - lastLookX;
             float dy = y - lastLookY;
             lastLookX = x; lastLookY = y;
-            player.yaw -= dx * sensitivityX;
+
+            // Естественное панорамирование (вправо свайп = поворот вправо, вверх свайп = взгляд вверх)
+            player.yaw += dx * sensitivityX;
             player.pitch -= dy * sensitivityY;
-            player.pitch = Math3D.clamp(player.pitch, -88f, 88f);
+            player.pitch = Math3D.clamp(player.pitch, -85f, 85f);
         }
     }
 
@@ -678,6 +649,7 @@ public final class PUBGTouchHUD {
         btnFire = false;
         btnFireLeft = false;
         btnReload = false;
+        btnJump = false;
         vehicleThrottle = 0;
         vehicleSteer = 0;
 

@@ -140,7 +140,7 @@ public final class PUBGGame {
         float radYaw = (player.yaw + player.recoilYaw) * Math3D.TO_RAD;
         float radPitch = (player.pitch + player.recoilPitch) * Math3D.TO_RAD;
 
-        float dirX = -(float) Math.sin(radYaw) * (float) Math.cos(radPitch);
+        float dirX = (float) Math.sin(radYaw) * (float) Math.cos(radPitch);
         float dirY = (float) Math.sin(radPitch);
         float dirZ = (float) Math.cos(radYaw) * (float) Math.cos(radPitch);
 

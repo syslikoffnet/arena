@@ -5,10 +5,11 @@ import java.util.ArrayList;
 
 /**
  * 3D Рендерер высокого качества для PUBG Mobile:
- * - Шейдеры Blinn-Phong со зеркальными бликами и контурным светом (Rim Light)
- * - Высокодетализированный персонаж: Шлем 3 уровня (Алтын с забралом), Броня 3 уровня, Рюкзак, Сковорода на поясе
- * - Транспорт: 3D Багги и УАЗ с 4 независимыми крутящимися колесами
- * - Мир: 2-этажные дома с двускатными крышами и открывающимися дверями, сосны, камни
+ * - Unreal Engine 4 PBR модель освещения с ACES Tone Mapping
+ * - Идеальная орбитальная TPP/FPP камера со стабильной линией прицеливания
+ * - Персонаж: Шлем 3 ур. (Алтын с забралом), Броня 3 ур., Рюкзак, Сковорода на поясе
+ * - Транспорт: 3D Багги и УАЗ с 4 отдельными вращающимися колесами
+ * - Мир: Дома Починок с крышами и открывающимися дверьми, сосны, холмы
  * - Грузовой самолет C-130 с 4 двигателями, Аирдроп с синим брезентом и парашютом
  */
 public final class PUBGRenderer {
@@ -59,61 +60,67 @@ public final class PUBGRenderer {
         GLES20.glEnable(GLES20.GL_CULL_FACE);
         GLES20.glCullFace(GLES20.GL_BACK);
 
-        GLES20.glClearColor(0.46f, 0.68f, 0.88f, 1.0f);
+        GLES20.glClearColor(0.42f, 0.65f, 0.85f, 1.0f);
         GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT | GLES20.GL_DEPTH_BUFFER_BIT);
 
         GLES20.glUseProgram(prog3D);
 
-        // Проекция
-        float fov = 75f - (player.adsFactor * 25f);
+        float fov = 75f - (player.adsFactor * 32f);
         float aspect = (float) width / Math.max(1, height);
-        projMat.perspective(fov, aspect, 0.1f, 500f);
+        projMat.perspective(fov, aspect, 0.1f, 600f);
 
-        // Камера от 3-го лица (TPP) над правым плечом
         float camYaw = player.yaw + player.recoilYaw;
         float camPitch = player.pitch + player.recoilPitch;
 
         float radYaw = camYaw * Math3D.TO_RAD;
         float radPitch = camPitch * Math3D.TO_RAD;
 
-        float fX = -(float) Math.sin(radYaw) * (float) Math.cos(radPitch);
+        float fX = (float) Math.sin(radYaw) * (float) Math.cos(radPitch);
         float fY = (float) Math.sin(radPitch);
         float fZ = (float) Math.cos(radYaw) * (float) Math.cos(radPitch);
+
+        float rX = (float) Math.cos(radYaw);
+        float rZ = -(float) Math.sin(radYaw);
 
         Math3D.Vec3 eye = new Math3D.Vec3();
         Math3D.Vec3 target = new Math3D.Vec3();
 
         if (player.moveMode == PUBGPlayer.MODE_IN_PLANE) {
-            eye.set(map.planePos.x - fX * 28f, map.planePos.y + 14f, map.planePos.z - fZ * 28f);
+            eye.set(map.planePos.x - fX * 32f, map.planePos.y + 14f, map.planePos.z - fZ * 32f);
             target.set(map.planePos);
-        } else if (player.isTPP && player.adsFactor < 0.8f) {
-            float dist = (player.moveMode == PUBGPlayer.MODE_DRIVING) ? 7.2f : 3.4f;
-            eye.set(player.pos.x - fX * dist + (float) Math.cos(radYaw) * 0.65f,
-                    player.pos.y + 1.85f - fY * dist * 0.5f,
-                    player.pos.z - fZ * dist + (float) Math.sin(radYaw) * 0.65f);
-            target.set(player.pos.x + fX * 25f, player.pos.y + 1.6f + fY * 25f, player.pos.z + fZ * 25f);
+        } else if (player.moveMode == PUBGPlayer.MODE_FREEFALL || player.moveMode == PUBGPlayer.MODE_PARACHUTE) {
+            float dist = 4.8f;
+            eye.set(player.pos.x - fX * dist, player.pos.y + 2.2f - fY * dist * 0.4f, player.pos.z - fZ * dist);
+            target.set(player.pos.x + fX * 20f, player.pos.y + 1.2f + fY * 20f, player.pos.z + fZ * 20f);
+        } else if (player.isTPP && player.adsFactor < 0.85f) {
+            float dist = (player.moveMode == PUBGPlayer.MODE_DRIVING) ? 7.5f : 3.2f;
+            float shoulder = (player.moveMode == PUBGPlayer.MODE_DRIVING) ? 0f : 0.55f;
+
+            eye.set(player.pos.x - fX * dist + rX * shoulder,
+                    player.pos.y + 1.70f - fY * dist * 0.4f,
+                    player.pos.z - fZ * dist + rZ * shoulder);
+
+            target.set(eye.x + fX * 35f, eye.y + fY * 35f, eye.z + fZ * 35f);
         } else {
-            eye.set(player.pos.x, player.pos.y + 1.7f, player.pos.z);
-            target.set(eye.x + fX * 25f, eye.y + fY * 25f, eye.z + fZ * 25f);
+            eye.set(player.pos.x, player.pos.y + 1.68f, player.pos.z);
+            target.set(eye.x + fX * 35f, eye.y + fY * 35f, eye.z + fZ * 35f);
         }
 
         viewMat.lookAt(eye, target, new Math3D.Vec3(0, 1, 0));
 
-        // Юниформы освещения и камеры
         GLES20.glUniform3f(uEyePos3D, eye.x, eye.y, eye.z);
         GLES20.glUniform3f(uLightDir3D, -0.6f, -0.8f, -0.4f);
-        GLES20.glUniform3f(uFogColor3D, 0.46f, 0.68f, 0.88f);
+        GLES20.glUniform3f(uFogColor3D, 0.42f, 0.65f, 0.85f);
         GLES20.glUniform1f(uFogStart3D, 80f);
-        GLES20.glUniform1f(uFogEnd3D, 420f);
+        GLES20.glUniform1f(uFogEnd3D, 450f);
 
-        // Вспышка выстрела
         GLES20.glUniform3f(uMuzzlePos3D, particles.muzzleFlashPos.x, particles.muzzleFlashPos.y, particles.muzzleFlashPos.z);
         GLES20.glUniform1f(uMuzzleInt3D, particles.muzzleFlashIntensity);
 
-        // 1. Земля (Трава Эрангеля)
+        // 1. Земля
         drawMesh(ModelGenerator.groundMesh, GLUtil.texGrass, 0, 0, 0, 1f, 1f, 1f, 0, 1f, 1f, 1f, 1f);
 
-        // 2. Дома в Починках (Стены + Черепичные крыши)
+        // 2. Препятствия и дома
         for (PUBGMap.Obstacle obs : map.obstacles) {
             drawMesh(ModelGenerator.boxMesh, obs.texture,
                     obs.getCenterX(), obs.getCenterY(), obs.getCenterZ(),
@@ -121,7 +128,7 @@ public final class PUBGRenderer {
                     0, 1f, 1f, 1f, 1f);
         }
 
-        // 3. Открывающиеся деревянные двери с ручками
+        // 3. Двери
         for (InteractiveDoor door : map.doors) {
             drawMeshRotated(ModelGenerator.boxMesh, GLUtil.texCrate,
                     door.hingeX + 0.8f, door.hingeY + 1.2f, door.hingeZ,
@@ -129,21 +136,22 @@ public final class PUBGRenderer {
                     door.baseAngle + door.currentAngle, 0);
         }
 
-        // 4. Деревья вокруг карты
+        // 4. Деревья
         for (int x = -160; x <= 160; x += 40) {
             for (int z = -160; z <= 160; z += 40) {
                 if (Math.abs(x) > 50 || Math.abs(z) > 50) {
-                    drawMesh(ModelGenerator.treeMesh, GLUtil.texGrass, x + (z % 15), 0, z + (x % 15), 1.2f, 1.2f, 1.2f, 0, 1f, 1f, 1f, 1f);
+                    float y = map.getTerrainHeight(x, z);
+                    drawMesh(ModelGenerator.treeMesh, GLUtil.texGrass, x + (z % 15), y, z + (x % 15), 1.2f, 1.2f, 1.2f, 0, 1f, 1f, 1f, 1f);
                 }
             }
         }
 
-        // 5. 3D Транспорт (Багги и УАЗ с 4 отдельными колесами)
+        // 5. Транспорт
         for (Vehicle3D v : map.vehicles) {
             renderVehicle3D(v);
         }
 
-        // 6. 3D Лут на полу (M416, AKM, AWM, Аптечки, Сковорода)
+        // 6. Лут на полу
         float lootRot = (System.currentTimeMillis() % 3600) / 10f;
         for (LootItem item : map.loot) {
             if (!item.isTaken) {
@@ -151,14 +159,14 @@ public final class PUBGRenderer {
             }
         }
 
-        // 7. Самолет C-130 в небе
+        // 7. Самолет
         if (map.planeProgress < 1.0f) {
             drawMeshRotated(ModelGenerator.cargoPlaneMesh, GLUtil.texMetal,
                     map.planePos.x, map.planePos.y, map.planePos.z,
                     1f, 1f, 1f, 45f, 0);
         }
 
-        // 8. Аирдроп с синим брезентом и красным куполом парашюта
+        // 8. Аирдроп
         if (map.airdropActive) {
             drawMesh(ModelGenerator.airdropBoxMesh, GLUtil.texAirdropTarp,
                     map.airdropPos.x, map.airdropPos.y + 0.9f, map.airdropPos.z, 1f, 1f, 1f, 0, 1f, 1f, 1f, 1f);
@@ -168,14 +176,14 @@ public final class PUBGRenderer {
             }
         }
 
-        // 9. Персонаж игрока (Высокодетализированный боец PUBG)
+        // 9. Игрок
         if (player.isTPP && player.moveMode != PUBGPlayer.MODE_IN_PLANE) {
             renderSoldier3D(player.pos.x, player.pos.y, player.pos.z, player.yaw, player.pitch,
                     GLUtil.texPlayerCT, player.helmetLevel, player.vestLevel, player.backpackLevel,
                     player.hasPan, player.getActiveWeapon());
         }
 
-        // 10. Боты (Экипированные враги)
+        // 10. Боты
         for (PUBGBot bot : bots) {
             if (!bot.isDead && !bot.isParachuting) {
                 renderSoldier3D(bot.pos.x, bot.pos.y, bot.pos.z, bot.yaw, bot.pitch,
