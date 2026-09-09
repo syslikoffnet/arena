@@ -18,16 +18,17 @@ import java.nio.FloatBuffer;
 import java.nio.ShortBuffer;
 
 /**
- * Продвинутый графический движок:
- * - Шейдеры Blinn-Phong с зеркальными бликами (Specular), контурным светом (Rim Light),
- *   динамическим освещением от дульной вспышки и атмосферным рассеиванием тумана
- * - Ultra-HD 512x512 PBR-текстуры (Трава Эрангеля, асфальт с разметкой, Алтын, кевлар, оружейная сталь)
+ * Графический движок Unreal Engine 4 (UE4 Mobile PBR Pipeline):
+ * - Cook-Torrance Microfacet Specular BRDF (GGX Normal Distribution, Schlick-GGX Geometry, Schlick Fresnel)
+ * - ACES Filmic Tone Mapping + Gamma Correction для кинематографичной цветопередачи PUBG Mobile
+ * - Динамический Rim Light (Fresnel контурный свет) для объема персонажей и техники
+ * - 512x512 PBR-текстуры (Трава Эрангеля, штукатурка Починок с кирпичом, черепица, дуб, кевлар, оружейная сталь)
  */
 public final class GLUtil {
 
     private GLUtil() {}
 
-    // Шейдер с моделью освещения Blinn-Phong + Rim Light (эффект консольной графики)
+    // Шейдер UE4 Mobile PBR + ACES Tone Mapping
     public static final String VS_3D =
             "uniform mat4 uMVP;\n" +
             "uniform mat4 uModel;\n" +
@@ -65,27 +66,69 @@ public final class GLUtil {
             "varying vec3 vNorm;\n" +
             "varying vec3 vViewDir;\n" +
             "varying float vFogDist;\n" +
+            "\n" +
+            "// ACES Filmic Tone Mapping Curve (UE4 Standard)\n" +
+            "vec3 ACESFilm(vec3 x) {\n" +
+            "    float a = 2.51;\n" +
+            "    float b = 0.03;\n" +
+            "    float c = 2.43;\n" +
+            "    float d = 0.59;\n" +
+            "    float e = 0.14;\n" +
+            "    return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);\n" +
+            "}\n" +
+            "\n" +
             "void main() {\n" +
             "    vec4 texColor = texture2D(uTex, vUV) * uColor;\n" +
-            "    vec3 norm = normalize(vNorm);\n" +
-            "    vec3 lightDir = normalize(-uLightDir);\n" +
-            "    vec3 viewDir = normalize(vViewDir);\n" +
-            "    vec3 halfDir = normalize(lightDir + viewDir);\n" +
-            "    // Диффузное освещение\n" +
-            "    float diff = max(dot(norm, lightDir), 0.0);\n" +
-            "    // Зеркальный блик Blinn-Phong\n" +
-            "    float spec = pow(max(dot(norm, halfDir), 0.0), 24.0) * 0.45;\n" +
-            "    // Контурный свет (Rim Light) для объема персонажа и техники\n" +
-            "    float rim = pow(1.0 - max(dot(viewDir, norm), 0.0), 3.0) * 0.35;\n" +
-            "    // Вспышка выстрела\n" +
+            "    vec3 N = normalize(vNorm);\n" +
+            "    vec3 L = normalize(-uLightDir);\n" +
+            "    vec3 V = normalize(vViewDir);\n" +
+            "    vec3 H = normalize(L + V);\n" +
+            "\n" +
+            "    // Cook-Torrance Microfacet Specular BRDF\n" +
+            "    float NdotL = max(dot(N, L), 0.0);\n" +
+            "    float NdotV = max(dot(N, V), 0.001);\n" +
+            "    float NdotH = max(dot(N, H), 0.0);\n" +
+            "    float VdotH = max(dot(V, H), 0.0);\n" +
+            "\n" +
+            "    // D: GGX Normal Distribution\n" +
+            "    float alpha = 0.35;\n" +
+            "    float alpha2 = alpha * alpha;\n" +
+            "    float denom = (NdotH * NdotH * (alpha2 - 1.0) + 1.0);\n" +
+            "    float D = alpha2 / (3.14159 * denom * denom);\n" +
+            "\n" +
+            "    // F: Schlick Fresnel\n" +
+            "    vec3 F0 = vec3(0.04);\n" +
+            "    vec3 F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);\n" +
+            "\n" +
+            "    // G: Schlick-GGX Geometry\n" +
+            "    float k = (alpha + 1.0) * (alpha + 1.0) / 8.0;\n" +
+            "    float g1 = NdotV / (NdotV * (1.0 - k) + k);\n" +
+            "    float g2 = NdotL / (NdotL * (1.0 - k) + k);\n" +
+            "    float G = g1 * g2;\n" +
+            "\n" +
+            "    vec3 specular = (D * F * G) / (4.0 * NdotV * NdotL + 0.001);\n" +
+            "\n" +
+            "    // Rim Light (Fresnel Glow)\n" +
+            "    float rim = pow(1.0 - NdotV, 3.5) * 0.40;\n" +
+            "\n" +
+            "    // Динамическая вспышка выстрела\n" +
             "    float muzzleDist = length(vWorldPos - uMuzzlePos);\n" +
-            "    float muzzle = uMuzzleIntensity / (1.0 + muzzleDist * muzzleDist * 0.12);\n" +
-            "    float ambient = 0.42;\n" +
-            "    vec3 litColor = texColor.rgb * (ambient + diff * 0.58 + muzzle) + vec3(spec + rim);\n" +
+            "    float muzzle = uMuzzleIntensity / (1.0 + muzzleDist * muzzleDist * 0.15);\n" +
+            "\n" +
+            "    // Солнечный и окружающий рассеянный свет\n" +
+            "    vec3 sunColor = vec3(1.15, 1.05, 0.95);\n" +
+            "    vec3 skyColor = vec3(0.32, 0.42, 0.55);\n" +
+            "    vec3 ambient = skyColor * 0.45;\n" +
+            "    vec3 diffuse = texColor.rgb * sunColor * NdotL;\n" +
+            "    vec3 lit = ambient * texColor.rgb + diffuse + (specular * sunColor * NdotL) + vec3(rim + muzzle);\n" +
+            "\n" +
             "    // Атмосферный туман горизонта\n" +
             "    float fog = clamp((vFogDist - uFogStart) / (uFogEnd - uFogStart), 0.0, 1.0);\n" +
-            "    vec3 finalColor = mix(litColor, uFogColor, fog * 0.68);\n" +
-            "    gl_FragColor = vec4(finalColor, texColor.a);\n" +
+            "    vec3 colorWithFog = mix(lit, uFogColor, fog * 0.65);\n" +
+            "\n" +
+            "    // ACES Filmic Tone Mapping\n" +
+            "    vec3 finalToneMapped = ACESFilm(colorWithFog);\n" +
+            "    gl_FragColor = vec4(finalToneMapped, texColor.a);\n" +
             "}\n";
 
     public static int createProgram(String vsSource, String fsSource) {

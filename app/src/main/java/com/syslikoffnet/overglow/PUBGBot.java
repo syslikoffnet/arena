@@ -43,11 +43,13 @@ public final class PUBGBot {
     public void update(float dt, PUBGMap map, PUBGPlayer player, ArrayList<PUBGBot> allBots, ParticleSystem particles) {
         if (isDead) return;
 
+        float gHeight = map.getTerrainHeight(pos.x, pos.z);
+
         // Фаза парашюта
         if (isParachuting) {
             pos.y -= 14f * dt;
-            if (pos.y <= 0) {
-                pos.y = 0;
+            if (pos.y <= gHeight) {
+                pos.y = gHeight;
                 isParachuting = false;
             }
             return;
@@ -96,8 +98,8 @@ public final class PUBGBot {
         pos.z += vel.z * dt;
         pos.y += vel.y * dt;
 
-        if (pos.y <= 0) {
-            pos.y = 0;
+        if (pos.y <= gHeight) {
+            pos.y = gHeight;
             vel.y = 0;
         }
 

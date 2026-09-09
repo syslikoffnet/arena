@@ -3,8 +3,9 @@ package com.syslikoffnet.overglow;
 import java.util.ArrayList;
 
 /**
- * Игрок PUBG Mobile:
- * - Полет на самолете, свободное падение (Freefall), парашют
+ * Игрок PUBG Mobile (Unreal Engine 4 Architecture):
+ * - USpringArmComponent & Orbit Camera System
+ * - Полет на самолете C-130, свободное падение (Freefall), парашют
  * - Вид от 3-го лица (TPP) и 1-го лица (FPP), кнопка свободного обзора ("Глаз")
  * - Вождение транспорта, открытие дверей, сбор лута на полу
  * - Рюкзак, шлем, бронежилет, аптечки, энергетики, сковорода на пояснице
@@ -157,9 +158,11 @@ public final class PUBGPlayer {
         pos.x += vel.x * dt;
         pos.y += vel.y * dt;
         pos.z += vel.z * dt;
-        altitude = pos.y;
 
-        if (pos.y <= 50f) {
+        float gHeight = map.getTerrainHeight(pos.x, pos.z);
+        altitude = Math.max(0, pos.y - gHeight);
+
+        if (pos.y <= gHeight + 50f) {
             openParachute();
         }
     }
@@ -175,10 +178,12 @@ public final class PUBGPlayer {
         pos.x += vel.x * dt;
         pos.y += vel.y * dt;
         pos.z += vel.z * dt;
-        altitude = pos.y;
 
-        if (pos.y <= 0.1f) {
-            pos.y = 0f;
+        float gHeight = map.getTerrainHeight(pos.x, pos.z);
+        altitude = Math.max(0, pos.y - gHeight);
+
+        if (pos.y <= gHeight + 0.2f) {
+            pos.y = gHeight;
             moveMode = MODE_ON_FOOT;
             SoundSynth3D.play2D(SoundSynth3D.SOUND_STEP, 0.8f);
         }
@@ -205,8 +210,9 @@ public final class PUBGPlayer {
         pos.z += vel.z * dt;
         pos.y += vel.y * dt;
 
-        if (pos.y <= 0) {
-            pos.y = 0;
+        float gHeight = map.getTerrainHeight(pos.x, pos.z);
+        if (pos.y <= gHeight) {
+            pos.y = gHeight;
             vel.y = 0;
         }
 
