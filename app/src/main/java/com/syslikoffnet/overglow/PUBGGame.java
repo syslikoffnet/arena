@@ -11,7 +11,7 @@ import java.util.ArrayList;
 
 /**
  * Главный игровой контроллер PUBG Mobile (Battle Royale):
- * - Лобби с выбором карт и режимов (Solo / Squad / TPP / FPP)
+ * - Лобби с 1-в-1 интерфейсом, выбором карт (Erangel, Miramar, Sanhok, Livik) и Royale Pass
  * - Полноценный матч: Остров ожидания -> Полет на самолете -> Прыжок и парашют ->
  *   Сбор лута в домах -> Открытие дверей -> Вождение транспорта -> Сужение зоны -> Победа #1!
  */
@@ -31,12 +31,13 @@ public final class PUBGGame {
     public final ArrayList<PUBGBot> bots = new ArrayList<>();
     public final ParticleSystem particles = new ParticleSystem();
     public final PUBGTouchHUD touchHUD = new PUBGTouchHUD();
+    public final PUBGLobbyUI lobbyUI = new PUBGLobbyUI();
 
     public float matchingTimer = 0f;
     public float matchTimer = 0f;
     public int aliveCount = 100;
 
-    // Отрисовка интерфейса лобби
+    // Отрисовка экранов победы и поражения
     private final Paint pPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rect = new RectF();
 
@@ -47,7 +48,7 @@ public final class PUBGGame {
 
     public void startMatchmaking() {
         state = STATE_MATCHING;
-        matchingTimer = 2.5f; // 2.5 секунды симуляции подбора 100 игроков
+        matchingTimer = 3.0f; // 3 секунды симуляции подбора 100 игроков
     }
 
     public void launchMatch() {
@@ -56,6 +57,7 @@ public final class PUBGGame {
         map.startPlaneFlight();
 
         player = new PUBGPlayer();
+        player.isTPP = lobbyUI.isTPP;
         player.pos.set(map.planeStart);
         player.moveMode = PUBGPlayer.MODE_IN_PLANE;
 
@@ -187,75 +189,13 @@ public final class PUBGGame {
 
         if (state == STATE_PLAYING) {
             touchHUD.render(c, w, h, player, map, bots, aliveCount, matchTimer);
-        } else if (state == STATE_LOBBY) {
-            renderLobby(c, w, h);
-        } else if (state == STATE_MATCHING) {
-            renderMatching(c, w, h);
+        } else if (state == STATE_LOBBY || state == STATE_MATCHING) {
+            lobbyUI.render(c, w, h, player, matchingTimer);
         } else if (state == STATE_VICTORY) {
             renderVictory(c, w, h);
         } else if (state == STATE_DEFEAT) {
             renderDefeat(c, w, h);
         }
-    }
-
-    private void renderLobby(Canvas c, int w, int h) {
-        c.drawColor(0xDD0C131D);
-
-        float cx = w / 2f;
-
-        // Логотип PUBG MOBILE
-        pPaint.setColor(0xFFFF9800);
-        pPaint.setTextSize(48);
-        pPaint.setFakeBoldText(true);
-        c.drawText("PUBG MOBILE", 40, 70, pPaint);
-
-        pPaint.setColor(0xFF00E5FF);
-        pPaint.setTextSize(20);
-        c.drawText("BATTLE ROYALE • ERANGEL", 42, 100, pPaint);
-
-        // Валюта вверху справа (BP, AG, UC)
-        pPaint.setColor(0xFFFFD700);
-        pPaint.setTextSize(22);
-        c.drawText("🪙 BP: 14,850   💎 UC: 600", w - 340, 60, pPaint);
-
-        // Кнопка выбора карты и режима (Слева внизу)
-        pPaint.setColor(0xAA162230);
-        rect.set(40, h - 190, 320, h - 110);
-        c.drawRoundRect(rect, 8, 8, pPaint);
-
-        pPaint.setColor(0xFFFFFFFF);
-        pPaint.setTextSize(22);
-        c.drawText("CLASSIC • ERANGEL", 55, h - 155, pPaint);
-        pPaint.setColor(0xFFFF9800);
-        pPaint.setTextSize(18);
-        c.drawText("TPP • SOLO (БОТЫ)", 55, h - 128, pPaint);
-
-        // Большая желтая кнопка "НАЧАТЬ / START" (1-в-1 как в PUBG)
-        pPaint.setColor(0xFFFFB300); // PUBG Yellow
-        rect.set(40, h - 95, 320, h - 25);
-        c.drawRoundRect(rect, 10, 10, pPaint);
-
-        pPaint.setColor(0xFF000000);
-        pPaint.setTextSize(34);
-        pPaint.setFakeBoldText(true);
-        String startStr = "▶ START (НАЧАТЬ)";
-        c.drawText(startStr, 55, h - 48, pPaint);
-    }
-
-    private void renderMatching(Canvas c, int w, int h) {
-        c.drawColor(0xEE090E14);
-        float cx = w / 2f;
-
-        pPaint.setColor(0xFFFFB300);
-        pPaint.setTextSize(36);
-        pPaint.setFakeBoldText(true);
-        String text = "MATCHING... FINDING OPPONENTS (100/100)";
-        c.drawText(text, cx - pPaint.measureText(text) / 2f, h * 0.45f, pPaint);
-
-        pPaint.setColor(0xFF00E5FF);
-        pPaint.setTextSize(24);
-        String sub = "ENTERING CARGO PLANE...";
-        c.drawText(sub, cx - pPaint.measureText(sub) / 2f, h * 0.55f, pPaint);
     }
 
     private void renderVictory(Canvas c, int w, int h) {
@@ -318,15 +258,22 @@ public final class PUBGGame {
         if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
             float x = event.getX();
             float y = event.getY();
+            int w = touchHUD.screenW;
             int h = touchHUD.screenH;
 
-            if (state == STATE_LOBBY) {
-                // Нажатие кнопки START
-                if (x > 40 && x < 360 && y > h - 100 && y < h - 20) {
-                    startMatchmaking();
+            if (state == STATE_MATCHING) {
+                float cx = w / 2f, cy = h / 2f;
+                if (x >= cx - 60 && x <= cx + 60 && y >= cy + 48 && y <= cy + 88) {
+                    state = STATE_LOBBY;
+                    matchingTimer = 0;
+                    return true;
                 }
+            }
+
+            if (state == STATE_LOBBY) {
+                return lobbyUI.handleClick(x, y, w, h, this);
             } else if (state == STATE_VICTORY || state == STATE_DEFEAT) {
-                float cx = touchHUD.screenW / 2f;
+                float cx = w / 2f;
                 if (x > cx - 150 && x < cx + 150 && y > h * 0.60f && y < h * 0.75f) {
                     state = STATE_LOBBY;
                 }
