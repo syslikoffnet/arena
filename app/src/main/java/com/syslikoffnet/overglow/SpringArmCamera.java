@@ -37,14 +37,24 @@ public final class SpringArmCamera {
     // Временные векторы для предотвращения аллокаций
     private final Math3D.Vec3 pivot = new Math3D.Vec3();
     private final Math3D.Vec3 desiredEye = new Math3D.Vec3();
+    private final Math3D.Vec3 rayDir = new Math3D.Vec3();
+
+    /** Пикс-смещение от тряски (hits), затухает в renderer */
+    public float shakePitch = 0f, shakeYaw = 0f;
+
+    public void punch(float amt) {
+        shakePitch += (float) (Math.random() - 0.5) * amt;
+        shakeYaw += (float) (Math.random() - 0.5) * amt * 0.6f;
+    }
 
     public void switchShoulder() {
         targetShoulderOffset = (targetShoulderOffset > 0) ? SHOULDER_LEFT : SHOULDER_RIGHT;
     }
 
+    /** @param lean -1..1 (наклон из-за угла) */
     public void update(float dt, Math3D.Vec3 playerPos, float characterHeight,
                        boolean isAiming, boolean isProning, boolean isCrouching,
-                       PUBGMap map) {
+                       float lean, PUBGMap map) {
         // 1. Плавный переход ADS и плеча
         float targetAds = isAiming ? 1.0f : 0.0f;
         adsFactor = Math3D.lerp(adsFactor, targetAds, dt * 14f);
@@ -75,18 +85,19 @@ public final class SpringArmCamera {
         right.y = 0;
         right.z = -sinYaw;
 
-        // 5. Желаемая позиция камеры с учетом плечевого смещения
+        // 5. Желаемая позиция камеры с учетом плечевого и наклона смещений
         float actualArmLength = currentArmLength;
+        float leanShift = lean * 0.42f;
 
         // Расчет позиции без коллизий
-        desiredEye.x = pivot.x - forward.x * actualArmLength + right.x * currentShoulderOffset;
-        desiredEye.y = pivot.y - forward.y * actualArmLength + (isAiming ? 0.08f : 0.15f);
-        desiredEye.z = pivot.z - forward.z * actualArmLength + right.z * currentShoulderOffset;
+        desiredEye.x = pivot.x - forward.x * actualArmLength + right.x * (currentShoulderOffset + leanShift);
+        desiredEye.y = pivot.y - forward.y * actualArmLength + (isAiming ? 0.08f : 0.15f) + Math.abs(lean) * 0.06f;
+        desiredEye.z = pivot.z - forward.z * actualArmLength + right.z * (currentShoulderOffset + leanShift);
 
         // 6. Raycast коллизия камеры со стенами и домами (Camera Occlusion Prevention)
         if (map != null && actualArmLength > 0.3f) {
             float minAllowedDistance = actualArmLength;
-            Math3D.Vec3 rayDir = new Math3D.Vec3(desiredEye.x - pivot.x, desiredEye.y - pivot.y, desiredEye.z - pivot.z);
+            rayDir.set(desiredEye.x - pivot.x, desiredEye.y - pivot.y, desiredEye.z - pivot.z);
             float rayLen = rayDir.length();
             if (rayLen > 0.001f) {
                 rayDir.x /= rayLen;
@@ -112,5 +123,9 @@ public final class SpringArmCamera {
         // 7. Итоговая позиция камеры и целевая точка фокуса
         eye.set(desiredEye);
         target.set(eye.x + forward.x * 40f, eye.y + forward.y * 40f, eye.z + forward.z * 40f);
+
+        // 8. Затухание тряски от попаданий/отдачи
+        shakePitch = Math3D.lerp(shakePitch, 0f, dt * 9f);
+        shakeYaw = Math3D.lerp(shakeYaw, 0f, dt * 9f);
     }
 }

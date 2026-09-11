@@ -1,593 +1,746 @@
 package com.syslikoffnet.overglow;
 
 import android.graphics.Canvas;
-import android.graphics.Color;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.RectF;
 import android.view.MotionEvent;
 
 import java.util.ArrayList;
+import java.util.Locale;
 
 /**
- * Фаза 2: Тактический HUD и Прицельные сетки (Optics & Zeroing HUD):
- * - Высокодетализированные прицельные сетки: Red Dot, 4x ACOG (с разметкой дальности), 8x CQBSS (Mil-Dot)
- * - Кнопка пристрелки (Zeroing Distance: 100м - 500м)
- * - Отображение установленных модулей на оружии (Compensator, Grip, Mag, Scope, Stock)
- * - Динамический маркер попадания (Hit Marker & Headshot Indicator)
- * - 0 GC Alloc
+ * Игровой HUD в духе мобильных BR (собственная реализация рисовки):
+ * - Кнопки рисуются по той же раскладке, что и обработчик ввода (общая геометрия MobileInputController)
+ * - Миникарта с зонами/дорогами/структурами, компас-линейка, счётчик живых
+ * - Динамический прицел с разбросом, хит-маркеры, дуга направления урона
+ * - Оптические сетки: коллиматор / 4x ACOG / 8x mil-dot (полноэкранные, с виньеткой)
+ * - Индикатор лечения, слоты оружия с обвеса, список nearby-лута
+ * - Водительский прибор (скорость/топливо), высота парения и купол
  */
 public final class PUBGTouchHUD {
 
     public final MobileInputController input = new MobileInputController();
 
-    // Быстрый доступ
-    public float moveX = 0, moveZ = 0;
-    public float vehicleThrottle = 0, vehicleSteer = 0;
-    public boolean vehicleHandbrake = false;
-
     private final Paint pFill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint pStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint pText = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rect = new RectF();
+    private final Path path = new Path();
 
     public void resize(int w, int h) {
         input.setScreenSize(w, h);
     }
 
-    public void render(Canvas c, int w, int h, PUBGPlayer player, PUBGMap map,
-                       ArrayList<PUBGBot> bots, int aliveCount, float matchTimer) {
+    public boolean onTouchEvent(MotionEvent event, PUBGPlayer player, PUBGMap map) {
+        input.onTouchEvent(event, player, map, player.camera);
+        return true;
+    }
+
+    public boolean isShooting() { return input.isFiring(); }
+
+    // =========================================================================
+    public void render(Canvas c, int w, int h, PUBGGame game) {
+        PUBGPlayer player = game.player;
+        PUBGMap map = game.map;
+
         if (player.moveMode == PUBGPlayer.MODE_IN_PLANE) {
-            renderPlaneFlightHUD(c, w, h, map);
-        } else if (player.moveMode == PUBGPlayer.MODE_FREEFALL || player.moveMode == PUBGPlayer.MODE_PARACHUTE) {
-            renderSkydivingHUD(c, w, h, player);
-            renderJoystick(c);
-        } else if (player.moveMode == PUBGPlayer.MODE_DRIVING) {
+            renderPlaneHUD(c, w, h, player);
+            renderJoystickBase(c, false);
+            return;
+        }
+        if (player.moveMode == PUBGPlayer.MODE_FREEFALL || player.moveMode == PUBGPlayer.MODE_PARACHUTE) {
+            renderSkydiveHUD(c, w, h, player);
+            renderJoystickBase(c, true);
+            renderButtons(c);
+            return;
+        }
+        if (player.moveMode == PUBGPlayer.MODE_DRIVING) {
             renderDrivingHUD(c, w, h, player);
-        } else {
-            renderOnFootHUD(c, w, h, player, map, bots, aliveCount);
-            renderJoystick(c);
+            renderJoystickBase(c, true);
+            renderButtons(c);
+            renderCompass(c, w, player.camera.yaw);
+            return;
         }
-    }
 
-    private void renderJoystick(Canvas c) {
-        if (input.hasActiveStick()) {
-            float sx = input.getStickStartX();
-            float sy = input.getStickStartY();
-            float cx = input.getStickCurX();
-            float cy = input.getStickCurY();
-
-            pFill.setStyle(Paint.Style.FILL);
-            pFill.setColor(0x4400E5FF);
-            c.drawCircle(sx, sy, 70, pFill);
-
-            pStroke.setStyle(Paint.Style.STROKE);
-            pStroke.setColor(0x8800E5FF);
-            pStroke.setStrokeWidth(2f);
-            c.drawCircle(sx, sy, 70, pStroke);
-
-            pFill.setColor(input.sprintLocked ? 0xFFFF9800 : 0xCC00E5FF);
-            c.drawCircle(cx, cy, 32, pFill);
-
-            if (input.sprintLocked) {
-                pText.setColor(0xFF000000);
-                pText.setTextSize(14);
-                pText.setFakeBoldText(true);
-                c.drawText("⚡", cx - 6, cy + 5, pText);
-            }
-        }
-    }
-
-    private void renderOnFootHUD(Canvas c, int w, int h, PUBGPlayer player, PUBGMap map,
-                                 ArrayList<PUBGBot> bots, int aliveCount) {
-        renderTopHeader(c, w, h, player, aliveCount);
-        renderMiniMap(c, w, h, player, map, bots);
-        renderNearbyLoot(c, w, h, player, map);
-        renderHealthAndBoost(c, w, h, player);
-        renderWeaponSlots(c, w, h, player);
-        renderTacticalButtons(c, w, h, player);
-
-        // Фаза 2: Оптические прицелы и сетки
-        Weapon wep = player.getActiveWeapon();
-        if (player.camera.adsFactor > 0.85f && wep != null) {
-            float zoom = wep.getAdsZoom();
-            if (zoom >= 7.0f) {
-                render8xScope(c, w, h, wep);
-            } else if (zoom >= 3.5f) {
-                render4xScope(c, w, h);
-            } else {
-                renderRedDotScope(c, w, h);
-            }
+        // --- Пешком ---
+        boolean inScope = player.adsFactor > 0.6f && currentZoom(player) > 3f;
+        if (inScope) {
+            renderScopeOverlay(c, w, h, player);
         } else {
             renderCrosshair(c, w, h, player);
         }
-
-        // Хитмаркер при попадании
-        if (player.hitMarkerTimer > 0) {
-            renderHitMarker(c, w, h, player.hitMarkerHeadshot);
+        renderMinimap(c, w, h, player, map, game.bots);
+        renderCompass(c, w, player.camera.yaw);
+        renderStatus(c, w, h, player);
+        renderNearbyLoot(c, w, h, player, map);
+        renderKillFeed(c, game);
+        renderHealBar(c, w, h, player);
+        renderDamageArc(c, w, h, player);
+        renderHitMarker(c, w, h, player);
+        renderJoystickBase(c, true);
+        renderButtons(c);
+        if (player.isDead) {
+            pText.setColor(0xCCFF1744);
+            pText.setTextSize(30);
+            pText.setTextAlign(Paint.Align.CENTER);
+            c.drawText("ВЫ ВЫБЫЛИ", w / 2f, h * 0.4f, pText);
+            pText.setTextAlign(Paint.Align.LEFT);
         }
     }
 
-    private void renderTopHeader(Canvas c, int w, int h, PUBGPlayer player, int aliveCount) {
+    private float currentZoom(PUBGPlayer player) {
+        Weapon w = player.getActiveWeapon();
+        return w != null ? w.getAdsZoom() : 1f;
+    }
+
+    // =========================================================================
+    // Кнопки: общая геометрия с MobileInputController
+    // =========================================================================
+    private void renderButtons(Canvas c) {
+        MobileInputController in = input;
+        for (int r = 0; r < MobileInputController.NUM_ROLES; r++) {
+            if (!in.visible[r]) continue;
+            float x = in.bx[r], y = in.by[r], rad = in.br[r];
+            boolean held = in.pressed[r];
+
+            pFill.setStyle(Paint.Style.FILL);
+            pFill.setColor(held ? 0x88FFC53D : 0x4610161E);
+            c.drawCircle(x, y, rad, pFill);
+            pStroke.setStyle(Paint.Style.STROKE);
+            pStroke.setStrokeWidth(Math.max(1.6f, rad * 0.045f));
+            pStroke.setColor(held ? 0xFFFFD766 : 0x99FFFFFF);
+            c.drawCircle(x, y, rad, pStroke);
+
+            drawIcon(c, r, x, y, rad);
+        }
+    }
+
+    private void drawIcon(Canvas c, int role, float x, float y, float r) {
+        pStroke.setStyle(Paint.Style.STROKE);
+        pStroke.setStrokeWidth(Math.max(1.5f, r * 0.07f));
+        pStroke.setColor(0xF2FFFFFF);
         pFill.setStyle(Paint.Style.FILL);
-        pFill.setColor(0xCC0F1722);
-        rect.set(24, 15, 240, 62);
-        c.drawRoundRect(rect, 8, 8, pFill);
+        pFill.setColor(0xF2FFFFFF);
+
+        switch (role) {
+            case MobileInputController.R_FIRE:
+                c.drawCircle(x, y, r * 0.42f, pStroke);
+                c.drawCircle(x, y, r * 0.14f, pFill);
+                c.drawLine(x, y - r * 0.62f, x, y - r * 0.5f, pStroke);
+                c.drawLine(x, y + r * 0.62f, x, y + r * 0.5f, pStroke);
+                c.drawLine(x - r * 0.62f, y, x - r * 0.5f, y, pStroke);
+                c.drawLine(x + r * 0.62f, y, x + r * 0.5f, y, pStroke);
+                break;
+            case MobileInputController.R_ADS:
+                c.drawCircle(x, y, r * 0.46f, pStroke);
+                c.drawCircle(x, y, r * 0.10f, pFill);
+                break;
+            case MobileInputController.R_JUMP: {
+                path.reset();
+                path.moveTo(x, y - r * 0.5f);
+                path.lineTo(x - r * 0.36f, y - r * 0.04f);
+                path.lineTo(x - r * 0.15f, y - r * 0.04f);
+                path.lineTo(x - r * 0.15f, y + r * 0.48f);
+                path.lineTo(x + r * 0.15f, y + r * 0.48f);
+                path.lineTo(x + r * 0.15f, y - r * 0.04f);
+                path.lineTo(x + r * 0.36f, y - r * 0.04f);
+                path.close();
+                c.drawPath(path, pFill);
+                break;
+            }
+            case MobileInputController.R_CROUCH:
+                c.drawLine(x - r * 0.42f, y + r * 0.25f, x + r * 0.42f, y + r * 0.25f, pStroke);
+                path.reset();
+                path.moveTo(x - r * 0.3f, y - r * 0.35f);
+                path.lineTo(x, y + r * 0.05f);
+                path.lineTo(x + r * 0.3f, y - r * 0.35f);
+                c.drawPath(path, pStroke);
+                break;
+            case MobileInputController.R_PRONE:
+                c.drawLine(x - r * 0.5f, y + r * 0.18f, x + r * 0.25f, y + r * 0.18f, pStroke);
+                c.drawCircle(x + r * 0.42f, y + r * 0.02f, r * 0.13f, pFill);
+                path.reset();
+                path.moveTo(x - r * 0.2f, y - r * 0.4f);
+                path.lineTo(x - r * 0.2f, y - r * 0.1f);
+                path.lineTo(x + r * 0.05f, y - r * 0.25f);
+                c.drawPath(path, pStroke);
+                break;
+            case MobileInputController.R_PEEK_L:
+            case MobileInputController.R_PEEK_R: {
+                float sgn = (role == MobileInputController.R_PEEK_L) ? -1f : 1f;
+                c.drawCircle(x - sgn * r * 0.12f, y - r * 0.18f, r * 0.16f, pFill);
+                path.reset();
+                path.moveTo(x - sgn * r * 0.34f, y + r * 0.08f);
+                path.lineTo(x + sgn * r * 0.34f, y + r * 0.08f);
+                path.lineTo(x + sgn * r * 0.05f, y + r * 0.42f);
+                path.lineTo(x - sgn * r * 0.34f, y + r * 0.2f);
+                c.drawPath(path, pFill);
+                break;
+            }
+            case MobileInputController.R_RELOAD:
+                c.drawArc(x - r * 0.4f, y - r * 0.4f, x + r * 0.4f, y + r * 0.4f, 40, 260, false, pStroke);
+                path.reset();
+                path.moveTo(x + r * 0.32f, y - r * 0.52f);
+                path.lineTo(x + r * 0.52f, y - r * 0.16f);
+                path.lineTo(x + r * 0.14f, y - r * 0.28f);
+                c.drawPath(path, pFill);
+                break;
+            case MobileInputController.R_HEAL:
+                c.drawRoundRect(x - r * 0.12f, y - r * 0.42f, x + r * 0.12f, y + r * 0.42f, 3, 3, pFill);
+                c.drawRoundRect(x - r * 0.42f, y - r * 0.12f, x + r * 0.42f, y + r * 0.12f, 3, 3, pFill);
+                break;
+            case MobileInputController.R_BOOST:
+                path.reset();
+                path.moveTo(x + r * 0.12f, y - r * 0.45f);
+                path.lineTo(x - r * 0.3f, y + r * 0.06f);
+                path.lineTo(x - r * 0.02f, y + r * 0.06f);
+                path.lineTo(x - r * 0.14f, y + r * 0.48f);
+                path.lineTo(x + r * 0.3f, y - r * 0.06f);
+                path.lineTo(x + r * 0.02f, y - r * 0.06f);
+                path.close();
+                pFill.setColor(0xFFF2E24B);
+                c.drawPath(path, pFill);
+                break;
+            case MobileInputController.R_THROW:
+                c.drawCircle(x, y + r * 0.08f, r * 0.30f, pStroke);
+                c.drawRoundRect(x - r * 0.10f, y - r * 0.48f, x + r * 0.10f, y - r * 0.18f, 2, 2, pFill);
+                break;
+            case MobileInputController.R_INTERACT:
+                pText.setColor(0xFFFFFFFF);
+                pText.setTextSize(r * 0.62f);
+                pText.setTextAlign(Paint.Align.CENTER);
+                c.drawText("Исп.", x, y + r * 0.22f, pText);
+                pText.setTextAlign(Paint.Align.LEFT);
+                break;
+            case MobileInputController.R_CHUTE:
+                path.reset();
+                path.moveTo(x - r * 0.5f, y + r * 0.1f);
+                path.quadTo(x, y - r * 0.62f, x + r * 0.5f, y + r * 0.1f);
+                c.drawPath(path, pStroke);
+                c.drawLine(x - r * 0.5f, y + r * 0.1f, x, y + r * 0.45f, pStroke);
+                c.drawLine(x + r * 0.5f, y + r * 0.1f, x, y + r * 0.45f, pStroke);
+                break;
+            case MobileInputController.R_GAS:
+                pText.setColor(0xFFB9F6CA);
+                pText.setTextSize(r * 0.42f);
+                pText.setTextAlign(Paint.Align.CENTER);
+                c.drawText("ГАЗ", x, y + r * 0.14f, pText);
+                pText.setTextAlign(Paint.Align.LEFT);
+                break;
+            case MobileInputController.R_BRAKE:
+                pText.setColor(0xFFFF8A80);
+                pText.setTextSize(r * 0.38f);
+                pText.setTextAlign(Paint.Align.CENTER);
+                c.drawText("ТОРМ", x, y + r * 0.12f, pText);
+                pText.setTextAlign(Paint.Align.LEFT);
+                break;
+            case MobileInputController.R_HB:
+                c.drawCircle(x, y, r * 0.34f, pStroke);
+                c.drawLine(x, y - r * 0.6f, x, y - r * 0.34f, pStroke);
+                break;
+            default: {
+                String lbl = shortLabel(role);
+                if (lbl != null) {
+                    pText.setColor(0xF2FFFFFF);
+                    pText.setTextSize(r * 0.55f);
+                    pText.setTextAlign(Paint.Align.CENTER);
+                    c.drawText(lbl, x, y + r * 0.2f, pText);
+                    pText.setTextAlign(Paint.Align.LEFT);
+                }
+                break;
+            }
+        }
+    }
+
+    private String shortLabel(int role) {
+        switch (role) {
+            case MobileInputController.R_FIRE_L: return "ОГОНЬ";
+            case MobileInputController.R_SLOT1: return "1";
+            case MobileInputController.R_SLOT2: return "2";
+            case MobileInputController.R_SLOT3: return "3";
+            case MobileInputController.R_FPP: return "FPP";
+            case MobileInputController.R_SHOULDER: return "П";
+            case MobileInputController.R_ZERO: return "ПР";
+            case MobileInputController.R_HORN: return "К";
+            case MobileInputController.R_EXIT: return "ВЫХОД";
+            case MobileInputController.R_CAMSW: return "CAM";
+            default: return null;
+        }
+    }
+
+    // =========================================================================
+    // Стик
+    // =========================================================================
+    private void renderJoystickBase(Canvas c, boolean showActive) {
+        float w = input.screenWidth, h = input.screenHeight;
+        float defX = w * 0.16f, defY = h * 0.72f;
 
         pStroke.setStyle(Paint.Style.STROKE);
-        pStroke.setColor(0x44FFFFFF);
-        pStroke.setStrokeWidth(1.5f);
-        c.drawRoundRect(rect, 8, 8, pStroke);
-
-        pText.setColor(0xFFFFFFFF);
-        pText.setTextSize(18);
-        pText.setFakeBoldText(true);
-        c.drawText("ALIVE " + aliveCount, 38, 45, pText);
-
-        pText.setColor(0xFFFF9800);
-        c.drawText("KILLS " + player.kills, 145, 45, pText);
-
-        // 360° Компас
-        float cx = w / 2f;
-        pFill.setColor(0xAA0A1118);
-        rect.set(cx - 220, 15, cx + 220, 58);
-        c.drawRoundRect(rect, 6, 6, pFill);
-
+        pStroke.setStrokeWidth(2.5f);
         pStroke.setColor(0x33FFFFFF);
-        pStroke.setStrokeWidth(1f);
-        c.drawRoundRect(rect, 6, 6, pStroke);
+        c.drawCircle(defX, defY, input.stickRadius, pStroke);
 
-        float yaw = (player.camera.yaw % 360 + 360) % 360;
+        float ox = showActive && input.hasActiveStick() ? input.getStickStartX() : defX;
+        float oy = showActive && input.hasActiveStick() ? input.getStickStartY() : defY;
+        float kx = showActive && input.hasActiveStick() ? input.getStickCurX() : defX;
+        float ky = showActive && input.hasActiveStick() ? input.getStickCurY() : defY;
 
-        pStroke.setColor(0x88FFFFFF);
-        for (int d = -60; d <= 60; d += 15) {
-            float lineX = cx + (d * 3.2f);
-            if (lineX >= cx - 210 && lineX <= cx + 210) {
-                c.drawLine(lineX, 42, lineX, 52, pStroke);
-            }
+        if (showActive) {
+            pFill.setStyle(Paint.Style.FILL);
+            pFill.setColor(0x33FFFFFF);
+            c.drawCircle(ox, oy, input.stickRadius, pFill);
+            pStroke.setColor(0x99FFFFFF);
+            c.drawCircle(ox, oy, input.stickRadius, pStroke);
+            pFill.setColor(input.sprintLocked ? 0xFFE8A33D : 0x99FFFFFF);
+            c.drawCircle(kx, ky, input.stickRadius * 0.44f, pFill);
+            pStroke.setColor(0xCCFFFFFF);
+            c.drawCircle(kx, ky, input.stickRadius * 0.44f, pStroke);
         }
 
-        pText.setColor(0xFFFFD700);
-        pText.setTextSize(22);
-        pText.setFakeBoldText(true);
-        String degStr = (int) yaw + "°";
-        c.drawText(degStr, cx - pText.measureText(degStr) / 2f, 44, pText);
-
-        String heading = "N";
-        if (yaw >= 25 && yaw < 65) heading = "NE";
-        else if (yaw >= 65 && yaw < 115) heading = "E";
-        else if (yaw >= 115 && yaw < 155) heading = "SE";
-        else if (yaw >= 155 && yaw < 205) heading = "S";
-        else if (yaw >= 205 && yaw < 245) heading = "SW";
-        else if (yaw >= 245 && yaw < 295) heading = "W";
-        else if (yaw >= 295 && yaw < 335) heading = "NW";
-
-        pText.setColor(0xFF00E5FF);
-        pText.setTextSize(14);
-        c.drawText(heading, cx - pText.measureText(heading) / 2f, 28, pText);
-    }
-
-    private void renderMiniMap(Canvas c, int w, int h, PUBGPlayer player, PUBGMap map, ArrayList<PUBGBot> bots) {
-        float mx = w - 105, my = 95, r = 78;
-
-        pFill.setStyle(Paint.Style.FILL);
-        pFill.setColor(0xDD111822);
-        c.drawCircle(mx, my, r, pFill);
-
-        pStroke.setStyle(Paint.Style.STROKE);
-        pStroke.setColor(0x8800E5FF);
-        pStroke.setStrokeWidth(2.5f);
-        c.drawCircle(mx, my, r, pStroke);
-
-        pStroke.setColor(0xFFFFFFFF);
-        pStroke.setStrokeWidth(2f);
-        c.drawCircle(mx, my, r * (map.whiteZoneRadius / 300f), pStroke);
-
-        pStroke.setColor(0xFF00B0FF);
-        pStroke.setStrokeWidth(3f);
-        c.drawCircle(mx, my, r * (map.blueZoneRadius / 300f), pStroke);
-
-        pFill.setColor(0xFFFFD700);
-        c.drawCircle(mx, my, 5, pFill);
-
-        float rad = player.camera.yaw * Math3D.TO_RAD;
-        c.drawLine(mx, my, mx + (float) Math.sin(rad) * 12, my - (float) Math.cos(rad) * 12, pStroke);
-    }
-
-    private void renderNearbyLoot(Canvas c, int w, int h, PUBGPlayer player, PUBGMap map) {
-        float startX = w - 290, startY = 190;
-        int drawn = 0;
-
-        for (LootItem item : map.loot) {
-            if (!item.isTaken && Math3D.dist(player.pos.x, player.pos.y, player.pos.z, item.x, item.y, item.z) < 3.5f) {
-                pFill.setStyle(Paint.Style.FILL);
-                pFill.setColor(0xDD162230);
-                rect.set(startX, startY + drawn * 44, w - 24, startY + drawn * 44 + 40);
-                c.drawRoundRect(rect, 6, 6, pFill);
-
-                pStroke.setStyle(Paint.Style.STROKE);
-                pStroke.setColor(0x44FFFFFF);
-                pStroke.setStrokeWidth(1.5f);
-                c.drawRoundRect(rect, 6, 6, pStroke);
-
-                pText.setColor(item.type == LootItem.TYPE_ATTACHMENT ? 0xFF00E5FF : 0xFFFFB300);
-                pText.setTextSize(17);
-                pText.setFakeBoldText(true);
-                String prefix = item.type == LootItem.TYPE_ATTACHMENT ? "🔧 " : "📦 ";
-                c.drawText(prefix + item.name, startX + 12, startY + drawn * 44 + 27, pText);
-
-                drawn++;
-                if (drawn >= 4) break;
-            }
+        if (input.sprintLocked) {
+            pText.setColor(0xFFFFC53D);
+            pText.setTextSize(13);
+            pText.setTextAlign(Paint.Align.CENTER);
+            c.drawText("БЕГ", ox, oy - input.stickRadius - 8, pText);
+            pText.setTextAlign(Paint.Align.LEFT);
         }
     }
 
-    private void renderHealthAndBoost(Canvas c, int w, int h, PUBGPlayer player) {
-        float cx = w / 2f, barW = 340f;
-        float startX = cx - barW / 2f, startY = h - 68;
-
-        pFill.setStyle(Paint.Style.FILL);
-        pFill.setColor(0xCC0A1018);
-        rect.set(startX - 12, startY - 26, startX + barW + 12, startY + 26);
-        c.drawRoundRect(rect, 8, 8, pFill);
-
-        pFill.setColor(0xFFFF9800);
-        rect.set(startX, startY - 20, startX + (barW * (player.boost / 100f)), startY - 8);
-        c.drawRoundRect(rect, 3, 3, pFill);
-
-        pFill.setColor(player.health > 25 ? 0xFFECEFF1 : 0xFFFF1744);
-        rect.set(startX, startY - 4, startX + (barW * (player.health / 100f)), startY + 16);
-        c.drawRoundRect(rect, 4, 4, pFill);
-
-        pText.setColor(0xFF00E5FF);
-        pText.setTextSize(14);
-        pText.setFakeBoldText(true);
-        c.drawText("🪖 Lv." + player.helmetLevel, startX - 70, startY + 10, pText);
-        c.drawText("🛡 Lv." + player.vestLevel, startX + barW + 16, startY + 10, pText);
-    }
-
-    private void renderWeaponSlots(Canvas c, int w, int h, PUBGPlayer player) {
-        float cx = w / 2f, slotW = 160f, slotH = 58f, startY = h - 138;
-        renderSingleSlot(c, cx - slotW - 10, startY, slotW, slotH, player.weapons[0], player.activeSlot == 0, "1. ");
-        renderSingleSlot(c, cx + 10, startY, slotW, slotH, player.weapons[1], player.activeSlot == 1, "2. ");
-    }
-
-    private void renderSingleSlot(Canvas c, float x, float y, float w, float h, Weapon wep, boolean active, String prefix) {
-        pFill.setStyle(Paint.Style.FILL);
-        pFill.setColor(active ? 0xDD1E2F44 : 0x880A1018);
-        rect.set(x, y, x + w, y + h);
-        c.drawRoundRect(rect, 8, 8, pFill);
-
-        pStroke.setStyle(Paint.Style.STROKE);
-        pStroke.setColor(active ? 0xFFFFB300 : 0x44FFFFFF);
-        pStroke.setStrokeWidth(active ? 2.5f : 1.5f);
-        c.drawRoundRect(rect, 8, 8, pStroke);
-
-        if (wep != null) {
-            pText.setColor(0xFFFFFFFF);
-            pText.setTextSize(16);
-            pText.setFakeBoldText(true);
-            c.drawText(prefix + wep.name, x + 10, y + 22, pText);
-
-            pText.setColor(0xFFFFD700);
-            pText.setTextSize(17);
-            c.drawText(wep.ammoInMag + " / " + wep.ammoReserve, x + 10, y + 42, pText);
-
-            // Иконки установленных модулей
-            StringBuilder attStr = new StringBuilder();
-            if (wep.attachments[WeaponAttachment.SLOT_MUZZLE] != null) attStr.append(" [M]");
-            if (wep.attachments[WeaponAttachment.SLOT_GRIP] != null) attStr.append(" [G]");
-            if (wep.attachments[WeaponAttachment.SLOT_MAGAZINE] != null) attStr.append(" [E]");
-            if (wep.attachments[WeaponAttachment.SLOT_SCOPE] != null) attStr.append(" [4x]");
-
-            pText.setColor(0xFF00E5FF);
-            pText.setTextSize(11);
-            c.drawText(attStr.toString(), x + 72, y + 42, pText);
-        } else {
-            pText.setColor(0x66FFFFFF);
-            pText.setTextSize(14);
-            c.drawText(prefix + "EMPTY", x + 12, y + 34, pText);
-        }
-    }
-
-    private void renderTacticalButtons(Canvas c, int w, int h, PUBGPlayer player) {
-        drawFireButton(c, w * 0.86f, h * 0.70f, 62, input.isFiring);
-        drawFireButton(c, w * 0.12f, h * 0.35f, 48, input.isLeftFiring);
-
-        drawScopeButton(c, w * 0.88f, h * 0.42f, 48, player.isAiming);
-        drawCircleBtn(c, w * 0.92f, h * 0.25f, 36, "🔄", player.camera.targetShoulderOffset < 0);
-
-        // Кнопка пристрелки (Zeroing Distance для снайперов)
-        Weapon activeW = player.getActiveWeapon();
-        if (activeW != null && player.isAiming) {
-            drawCircleBtn(c, w * 0.88f, h * 0.12f, 36, activeW.zeroingDistance + "m", false);
-        }
-
-        drawCircleBtn(c, w * 0.78f, h * 0.35f, 38, "◀ Q", player.leanAngle < -5f);
-        drawCircleBtn(c, w * 0.78f, h * 0.46f, 38, "▶ E", player.leanAngle > 5f);
-
-        drawCircleBtn(c, w * 0.92f, h * 0.88f, 42, "⬆", input.isJumping);
-        drawCircleBtn(c, w * 0.80f, h * 0.88f, 42, "🧎", player.motor.currentStance == CharacterMotor.STANCE_CROUCH);
-        drawCircleBtn(c, w * 0.68f, h * 0.88f, 42, "🛌", player.motor.currentStance == CharacterMotor.STANCE_PRONE);
-
-        drawCircleBtn(c, w * 0.74f, h * 0.55f, 38, "🔄", input.isReloading);
-        drawCircleBtn(c, w * 0.76f, h * 0.28f, 40, "🚪 / 🚗", false);
-
-        drawHealShortcut(c, w * 0.25f, h * 0.88f, player);
-    }
-
-    private void drawFireButton(Canvas c, float cx, float cy, float r, boolean active) {
-        pFill.setStyle(Paint.Style.FILL);
-        pFill.setColor(active ? 0xEEFF5722 : 0xAA111822);
-        c.drawCircle(cx, cy, r, pFill);
-
-        pStroke.setStyle(Paint.Style.STROKE);
-        pStroke.setColor(active ? 0xFFFFEB3B : 0x88FFFFFF);
-        pStroke.setStrokeWidth(3f);
-        c.drawCircle(cx, cy, r, pStroke);
-
-        pText.setColor(0xFFFFD700);
-        pText.setTextSize(active ? 34 : 30);
-        pText.setFakeBoldText(true);
-        c.drawText("🔥", cx - 15, cy + 10, pText);
-    }
-
-    private void drawScopeButton(Canvas c, float cx, float cy, float r, boolean active) {
-        pFill.setStyle(Paint.Style.FILL);
-        pFill.setColor(active ? 0xEE00E5FF : 0xAA111822);
-        c.drawCircle(cx, cy, r, pFill);
-
-        pStroke.setStyle(Paint.Style.STROKE);
-        pStroke.setColor(active ? 0xFFFFFFFF : 0x8800E5FF);
-        pStroke.setStrokeWidth(3f);
-        c.drawCircle(cx, cy, r, pStroke);
-
-        pText.setColor(active ? 0xFF000000 : 0xFF00E5FF);
-        pText.setTextSize(26);
-        pText.setFakeBoldText(true);
-        c.drawText("🎯", cx - 14, cy + 9, pText);
-    }
-
-    private void drawCircleBtn(Canvas c, float cx, float cy, float r, String icon, boolean active) {
-        pFill.setStyle(Paint.Style.FILL);
-        pFill.setColor(active ? 0xEE00E5FF : 0x88111822);
-        c.drawCircle(cx, cy, r, pFill);
-
-        pStroke.setStyle(Paint.Style.STROKE);
-        pStroke.setColor(0x66FFFFFF);
-        pStroke.setStrokeWidth(2f);
-        c.drawCircle(cx, cy, r, pStroke);
-
-        pText.setColor(active ? 0xFF000000 : 0xFFFFFFFF);
-        pText.setTextSize(16);
-        pText.setFakeBoldText(true);
-        float tw = pText.measureText(icon);
-        c.drawText(icon, cx - tw / 2f, cy + 6, pText);
-    }
-
-    private void drawHealShortcut(Canvas c, float cx, float cy, PUBGPlayer player) {
-        pFill.setStyle(Paint.Style.FILL);
-        pFill.setColor(0xCC0F1722);
-        c.drawCircle(cx, cy, 40, pFill);
-
-        pStroke.setStyle(Paint.Style.STROKE);
-        pStroke.setColor(0xFF00E676);
-        pStroke.setStrokeWidth(2.5f);
-        c.drawCircle(cx, cy, 40, pStroke);
-
-        pText.setColor(0xFFFFFFFF);
-        pText.setTextSize(18);
-        pText.setFakeBoldText(true);
-        c.drawText("🩹 x" + player.firstAidCount, cx - 22, cy + 6, pText);
-    }
-
-    private void renderPlaneFlightHUD(Canvas c, int w, int h, PUBGMap map) {
-        float cx = w / 2f;
-        pFill.setStyle(Paint.Style.FILL);
-        pFill.setColor(0xFFFFB300);
-        rect.set(cx - 150, h * 0.74f, cx + 150, h * 0.74f + 72);
-        c.drawRoundRect(rect, 10, 10, pFill);
-
-        pText.setColor(0xFF000000);
-        pText.setTextSize(34);
-        pText.setFakeBoldText(true);
-        String jump = "▶ JUMP (ПРЫЖОК)";
-        c.drawText(jump, cx - pText.measureText(jump) / 2f, h * 0.74f + 48, pText);
-    }
-
-    private void renderSkydivingHUD(Canvas c, int w, int h, PUBGPlayer player) {
-        pFill.setStyle(Paint.Style.FILL);
-        pFill.setColor(0xCC0F1722);
-        rect.set(35, h * 0.32f, 195, h * 0.68f);
-        c.drawRoundRect(rect, 8, 8, pFill);
-
-        pText.setColor(0xFF00E5FF);
-        pText.setTextSize(20);
-        pText.setFakeBoldText(true);
-        c.drawText("ALT: " + (int) player.altitude + " m", 50, h * 0.44f, pText);
-
-        pText.setColor(0xFFFF9800);
-        c.drawText("SPD: " + (int) player.fallSpeed + " km/h", 50, h * 0.54f, pText);
-
-        if (player.moveMode == PUBGPlayer.MODE_FREEFALL) {
-            float cx = w / 2f;
-            pFill.setColor(0xFF00E5FF);
-            rect.set(cx - 160, h * 0.74f, cx + 160, h * 0.74f + 65);
-            c.drawRoundRect(rect, 8, 8, pFill);
-
-            pText.setColor(0xFF000000);
-            pText.setTextSize(26);
-            c.drawText("OPEN PARACHUTE", cx - 130, h * 0.74f + 42, pText);
-        }
-    }
-
-    private void renderDrivingHUD(Canvas c, int w, int h, PUBGPlayer player) {
-        drawPedalBtn(c, w * 0.88f, h * 0.70f, 60, "GAS", true);
-        drawPedalBtn(c, w * 0.74f, h * 0.76f, 48, "BRAKE", false);
-
-        drawSteerBtn(c, w * 0.10f, h * 0.70f, 52, "◀");
-        drawSteerBtn(c, w * 0.24f, h * 0.70f, 52, "▶");
-
-        drawCircleBtn(c, w * 0.86f, h * 0.34f, 46, "EXIT 🚪", false);
-
-        if (player.currentVehicle != null) {
-            float cx = w / 2f;
-            pText.setColor(0xFFFFD700);
-            pText.setTextSize(38);
-            pText.setFakeBoldText(true);
-            c.drawText((int) Math.abs(player.currentVehicle.speedKmH) + " km/h", cx - 65, h - 90, pText);
-        }
-    }
-
-    private void drawPedalBtn(Canvas c, float cx, float cy, float r, String label, boolean isGas) {
-        pFill.setStyle(Paint.Style.FILL);
-        pFill.setColor(isGas ? 0xDD2E7D32 : 0xDDC62828);
-        rect.set(cx - r * 0.8f, cy - r, cx + r * 0.8f, cy + r);
-        c.drawRoundRect(rect, 8, 8, pFill);
-
-        pText.setColor(0xFFFFFFFF);
-        pText.setTextSize(20);
-        pText.setFakeBoldText(true);
-        float tw = pText.measureText(label);
-        c.drawText(label, cx - tw / 2f, cy + 7, pText);
-    }
-
-    private void drawSteerBtn(Canvas c, float cx, float cy, float r, String arrow) {
-        pFill.setStyle(Paint.Style.FILL);
-        pFill.setColor(0xDD162230);
-        c.drawCircle(cx, cy, r, pFill);
-
-        pStroke.setStyle(Paint.Style.STROKE);
-        pStroke.setColor(0x88FFFFFF);
-        pStroke.setStrokeWidth(2.5f);
-        c.drawCircle(cx, cy, r, pStroke);
-
-        pText.setColor(0xFF00E5FF);
-        pText.setTextSize(32);
-        pText.setFakeBoldText(true);
-        c.drawText(arrow, cx - 14, cy + 12, pText);
-    }
-
+    // =========================================================================
+    // Прицел
+    // =========================================================================
     private void renderCrosshair(Canvas c, int w, int h, PUBGPlayer player) {
         float cx = w / 2f, cy = h / 2f;
-        float spread = 12f + player.recoil.currentPitchOffset * 8f;
+        Weapon wep = player.getActiveWeapon();
+        float spread = 6f;
+        if (wep != null) spread += player.recoil.currentPitchOffset * 26f;
+        spread += player.motor.horizontalSpeed * 1.5f;
+        if (player.isAiming && wep != null && wep.getAdsZoom() < 3f) spread *= 0.45f;
+        spread = Math3D.clamp(spread, 4f, 60f);
 
         pStroke.setStyle(Paint.Style.STROKE);
-        pStroke.setColor(0xCC00FF88);
-        pStroke.setStrokeWidth(2.5f);
-
-        c.drawLine(cx, cy - spread - 12, cx, cy - spread, pStroke);
-        c.drawLine(cx, cy + spread, cx, cy + spread + 12, pStroke);
-        c.drawLine(cx - spread - 12, cy, cx - spread, cy, pStroke);
-        c.drawLine(cx + spread, cy, cx + spread + 12, cy, pStroke);
+        pStroke.setStrokeWidth(2.2f);
+        pStroke.setColor(0xE6FFFFFF);
+        float len = 9f;
+        c.drawLine(cx, cy - spread, cx, cy - spread - len, pStroke);
+        c.drawLine(cx, cy + spread, cx, cy + spread + len, pStroke);
+        c.drawLine(cx - spread, cy, cx - spread - len, cy, pStroke);
+        c.drawLine(cx + spread, cy, cx + spread + len, cy, pStroke);
+        pFill.setStyle(Paint.Style.FILL);
+        pFill.setColor(0xE6FFFFFF);
+        c.drawCircle(cx, cy, 1.6f, pFill);
     }
 
-    private void renderRedDotScope(Canvas c, int w, int h) {
-        float cx = w / 2f, cy = h / 2f;
-        pFill.setStyle(Paint.Style.FILL);
-        pFill.setColor(0xEEFF1744);
-        c.drawCircle(cx, cy, 3.5f, pFill);
-
+    private void renderHitMarker(Canvas c, int w, int h, PUBGPlayer player) {
+        if (player.hitMarkerTimer <= 0) return;
+        float a = player.hitMarkerTimer / 0.22f;
+        float cx = w / 2f, cy = h / 2f, s = 13f, g = 5f;
         pStroke.setStyle(Paint.Style.STROKE);
-        pStroke.setColor(0xAAFF1744);
-        pStroke.setStrokeWidth(1.5f);
-        c.drawCircle(cx, cy, 14f, pStroke);
+        pStroke.setStrokeWidth(3f);
+        int alpha = (int) (230 * Math3D.clamp(a, 0f, 1f));
+        pStroke.setColor(player.hitMarkerHeadshot
+                ? ((0xFF << 24) | 0x00FF1744)
+                : ((alpha << 24) | 0x00FFFFFF));
+        c.drawLine(cx - g - s, cy - g - s, cx - g, cy - g, pStroke);
+        c.drawLine(cx + g + s, cy - g - s, cx + g, cy - g, pStroke);
+        c.drawLine(cx - g - s, cy + g + s, cx - g, cy + g, pStroke);
+        c.drawLine(cx + g + s, cy + g + s, cx + g, cy + g, pStroke);
+        pStroke.setAlpha(255);
     }
 
-    private void render4xScope(Canvas c, int w, int h) {
+    private void renderDamageArc(Canvas c, int w, int h, PUBGPlayer player) {
+        if (player.damageIndicatorTimer <= 0) return;
+        float a = player.damageIndicatorTimer / 0.6f;
         float cx = w / 2f, cy = h / 2f;
-        float r = h * 0.44f;
-
-        pFill.setStyle(Paint.Style.FILL);
-        pFill.setColor(0xFF000000);
-        c.drawRect(0, 0, cx - r, h, pFill);
-        c.drawRect(cx + r, 0, w, h, pFill);
-        c.drawRect(cx - r, 0, cx + r, cy - r, pFill);
-        c.drawRect(cx - r, cy + r, cx + r, h, pFill);
-
+        float rad = (float) (player.damageAngle * Math.PI / 180.0);
+        float ax = cx + (float) Math.sin(rad) * 120f;
+        float ay = cy - (float) Math.cos(rad) * 120f;
         pStroke.setStyle(Paint.Style.STROKE);
-        pStroke.setColor(0xEEFF2222);
-        pStroke.setStrokeWidth(2f);
-        c.drawLine(cx - r, cy, cx + r, cy, pStroke);
-        c.drawLine(cx, cy - r, cx, cy + r, pStroke);
-
-        // Метки дальности (200м, 300м, 400м)
-        pStroke.setStrokeWidth(1.5f);
-        c.drawLine(cx - 15, cy + 30, cx + 15, cy + 30, pStroke); // 200m
-        c.drawLine(cx - 25, cy + 60, cx + 25, cy + 60, pStroke); // 300m
-        c.drawLine(cx - 35, cy + 95, cx + 35, cy + 95, pStroke); // 400m
-
-        pText.setColor(0xEEFF2222);
-        pText.setTextSize(12);
-        c.drawText("2", cx + 20, cy + 34, pText);
-        c.drawText("3", cx + 30, cy + 64, pText);
-        c.drawText("4", cx + 40, cy + 99, pText);
+        pStroke.setStrokeWidth(9f);
+        pStroke.setColor(0xFFE53935);
+        pStroke.setAlpha((int) (200 * a));
+        path.reset();
+        path.moveTo(ax - 34f, ay);
+        path.lineTo(ax, ay - 24f);
+        path.lineTo(ax + 34f, ay);
+        c.drawPath(path, pStroke);
+        pStroke.setAlpha(255);
     }
 
-    private void render8xScope(Canvas c, int w, int h, Weapon wep) {
+    // =========================================================================
+    // Оптика: коллиматор / 4x / 8x
+    // =========================================================================
+    private void renderScopeOverlay(Canvas c, int w, int h, PUBGPlayer player) {
+        float zoom = currentZoom(player);
         float cx = w / 2f, cy = h / 2f;
-        float r = h * 0.46f;
 
-        pFill.setStyle(Paint.Style.FILL);
-        pFill.setColor(0xFF000000);
-        c.drawRect(0, 0, cx - r, h, pFill);
-        c.drawRect(cx + r, 0, w, h, pFill);
-        c.drawRect(cx - r, 0, cx + r, cy - r, pFill);
-        c.drawRect(cx - r, cy + r, cx + r, h, pFill);
-
-        pStroke.setStyle(Paint.Style.STROKE);
-        pStroke.setColor(0xEE111111);
-        pStroke.setStrokeWidth(2.5f);
-        c.drawLine(cx - r, cy, cx + r, cy, pStroke);
-        c.drawLine(cx, cy - r, cx, cy + r, pStroke);
-
-        // Mil-Dots
-        pFill.setColor(0xFF111111);
-        for (int i = 1; i <= 5; i++) {
-            c.drawCircle(cx, cy + i * 26, 2.5f, pFill);
-            c.drawCircle(cx, cy - i * 26, 2.5f, pFill);
-            c.drawCircle(cx + i * 26, cy, 2.5f, pFill);
-            c.drawCircle(cx - i * 26, cy, 2.5f, pFill);
+        if (zoom >= 7.5f) {
+            // 8x: круглая маска
+            float R = Math.min(w, h) * 0.46f;
+            pFill.setStyle(Paint.Style.FILL);
+            pFill.setColor(0xFF000000);
+            path.reset();
+            path.addRect(0, 0, w, h, Path.Direction.CW);
+            path.addCircle(cx, cy, R, Path.Direction.CCW);
+            c.drawPath(path, pFill);
+        } else {
+            // 4x: горизонтальные чёрные полосы
+            float band = h * 0.13f;
+            pFill.setStyle(Paint.Style.FILL);
+            pFill.setColor(0xEE000000);
+            c.drawRect(0, 0, w, band, pFill);
+            c.drawRect(0, h - band, w, h, pFill);
         }
 
-        // Индикатор пристрелки
-        pText.setColor(0xFFFFD700);
-        pText.setTextSize(16);
-        pText.setFakeBoldText(true);
-        c.drawText("ZERO: " + wep.zeroingDistance + "m", cx - 45, cy + r - 30, pText);
-    }
-
-    private void renderHitMarker(Canvas c, int w, int h, boolean headshot) {
-        float cx = w / 2f, cy = h / 2f;
         pStroke.setStyle(Paint.Style.STROKE);
-        pStroke.setColor(headshot ? 0xFFFF1744 : 0xFFFFFFFF);
-        pStroke.setStrokeWidth(headshot ? 3.5f : 2.5f);
+        pStroke.setStrokeWidth(1.6f);
+        pStroke.setColor(0xE6FFFFFF);
+        // центральный маркер + mil-dots
+        c.drawLine(cx - 14, cy, cx - 4, cy, pStroke);
+        c.drawLine(cx + 4, cy, cx + 14, cy, pStroke);
+        c.drawLine(cx, cy - 14, cx, cy - 4, pStroke);
+        c.drawLine(cx, cy + 4, cx, cy + 14, pStroke);
+        float md = 18f * (zoom > 6 ? 1.2f : 1f);
+        for (int i = 1; i <= 4; i++) {
+            c.drawLine(cx - 4, cy + md * i, cx + 4, cy + md * i, pStroke);
+        }
+        for (int i = 1; i <= 2; i++) {
+            c.drawLine(cx + md * i, cy - 3, cx + md * i, cy + 3, pStroke);
+            c.drawLine(cx - md * i, cy - 3, cx - md * i, cy + 3, pStroke);
+        }
 
-        float s = headshot ? 14f : 10f;
-        c.drawLine(cx - s, cy - s, cx - 4, cy - 4, pStroke);
-        c.drawLine(cx + 4, cy + 4, cx + s, cy + s, pStroke);
-        c.drawLine(cx + s, cy - s, cx + 4, cy - 4, pStroke);
-        c.drawLine(cx - s, cy + s, cx - 4, cy + 4, pStroke);
+        // Пристрелка (zeroing)
+        Weapon wep = player.getActiveWeapon();
+        if (wep != null) {
+            pText.setColor(0xB3FFFFFF);
+            pText.setTextSize(14);
+            pText.setTextAlign(Paint.Align.CENTER);
+            c.drawText("ZERO " + wep.zeroingDistance + "m", cx, cy + h * 0.16f, pText);
+            pText.setTextAlign(Paint.Align.LEFT);
+        }
     }
 
-    public boolean onTouchEvent(MotionEvent event, PUBGPlayer player, PUBGMap map) {
-        if (event.getActionMasked() == MotionEvent.ACTION_DOWN) {
-            float rx = event.getX() / input.screenWidth;
-            float ry = event.getY() / input.screenHeight;
+    // =========================================================================
+    // Миникарта
+    // =========================================================================
+    private void renderMinimap(Canvas c, int w, int h, PUBGPlayer player, PUBGMap map, ArrayList<PUBGBot> bots) {
+        float R = h * 0.115f;
+        float mx = w - R - 14, my = R + 14;
+        float scale = R / 130f; // обзор ±130 м
 
-            // Клик по кнопке Zeroing Distance
-            if (rx > 0.84f && rx < 0.94f && ry > 0.08f && ry < 0.18f && player.isAiming) {
-                Weapon w = player.getActiveWeapon();
-                if (w != null) {
-                    w.cycleZeroing();
-                    SoundSynth3D.play2D(SoundSynth3D.SOUND_RELOAD, 0.5f);
-                }
-                return true;
+        pFill.setStyle(Paint.Style.FILL);
+        pFill.setColor(0xB00B141C);
+        c.drawCircle(mx, my, R, pFill);
+        pStroke.setStyle(Paint.Style.STROKE);
+        pStroke.setStrokeWidth(2f);
+        pStroke.setColor(0x66FFFFFF);
+        c.drawCircle(mx, my, R, pStroke);
+
+        c.save();
+        path.reset();
+        path.addCircle(mx, my, R - 1, Path.Direction.CW);
+        c.clipPath(path);
+
+        // Дороги
+        pStroke.setColor(0x66FFFFFF);
+        pStroke.setStrokeWidth(2f);
+        for (float[] rd : map.roads) {
+            c.drawLine(mx + (rd[0] - player.pos.x) * scale, my + (rd[1] - player.pos.z) * scale,
+                       mx + (rd[2] - player.pos.x) * scale, my + (rd[3] - player.pos.z) * scale, pStroke);
+        }
+        // Строения
+        pFill.setColor(0x99CBD3DA);
+        for (PUBGMap.Obstacle o : map.obstacles) {
+            float dx = (o.getCenterX() - player.pos.x) * scale;
+            float dz = (o.getCenterZ() - player.pos.z) * scale;
+            if (Math.abs(dx) > R + 6 || Math.abs(dz) > R + 6) continue;
+            float ww = Math.max(1.5f, o.getWidth() * scale), hh2 = Math.max(1.5f, o.getDepth() * scale);
+            c.drawRect(mx + dx - ww / 2f, my + dz - hh2 / 2f, mx + dx + ww / 2f, my + dz + hh2 / 2f, pFill);
+        }
+        // Зоны
+        pStroke.setStyle(Paint.Style.STROKE);
+        pStroke.setStrokeWidth(2f);
+        pStroke.setColor(0xFFB0BEC5);
+        c.drawCircle(mx + (map.whiteZoneX - player.pos.x) * scale, my + (map.whiteZoneZ - player.pos.z) * scale,
+                map.whiteZoneRadius * scale, pStroke);
+        pStroke.setColor(0x9940C4FF);
+        c.drawCircle(mx + (map.blueZoneX - player.pos.x) * scale, my + (map.blueZoneZ - player.pos.z) * scale,
+                map.blueZoneRadius * scale, pStroke);
+        // Аирдроп
+        if (map.airdropActive) {
+            pFill.setColor(0xFFFF5252);
+            c.drawCircle(mx + (map.airdropPos.x - player.pos.x) * scale, my + (map.airdropPos.z - player.pos.z) * scale, 3.4f, pFill);
+        }
+        // Боты — только очень близко (перф + баланс)
+        pFill.setColor(0xFFFF1744);
+        for (PUBGBot b : bots) {
+            if (b.isDead) continue;
+            float dx = (b.pos.x - player.pos.x) * scale, dz = (b.pos.z - player.pos.z) * scale;
+            if (Math.abs(dx) > R || Math.abs(dz) > R) continue;
+            c.drawCircle(mx + dx, my + dz, 2.6f, pFill);
+        }
+        // Игрок-стрелка
+        float pr = player.camera.yaw * Math3D.TO_RAD;
+        float ax = mx, ay = my;
+        path.reset();
+        path.moveTo(ax + (float) Math.sin(pr) * 7f, ay + (float) Math.cos(pr) * 7f);
+        path.lineTo(ax + (float) Math.sin(pr + 2.5f) * 6f, ay + (float) Math.cos(pr + 2.5f) * 6f);
+        path.lineTo(ax + (float) Math.sin(pr - 2.5f) * 6f, ay + (float) Math.cos(pr - 2.5f) * 6f);
+        path.close();
+        pFill.setColor(0xFF90EE90);
+        c.drawPath(path, pFill);
+        c.restore();
+
+        // Таймер зоны под миникартой
+        pText.setColor(0xCCFFFFFF);
+        pText.setTextSize(13);
+        pText.setTextAlign(Paint.Align.CENTER);
+        c.drawText(String.format(Locale.US, "ЗОНА %d  %02d:%02d", map.zonePhase,
+                (int) (map.zoneShrinkTimer) / 60, (int) (map.zoneShrinkTimer) % 60), mx, my + R + 16, pText);
+        pText.setTextAlign(Paint.Align.LEFT);
+    }
+
+    // =========================================================================
+    // Компас-линейка
+    // =========================================================================
+    private void renderCompass(Canvas c, int w, float yaw) {
+        float cy = 26;
+        float step = w * 0.035f;
+        pText.setColor(0x99FFFFFF);
+        pText.setTextSize(12);
+        pText.setTextAlign(Paint.Align.CENTER);
+        int deg = (int) ((yaw % 360) + 360) % 360;
+        for (int i = -6; i <= 6; i++) {
+            int a = (deg / 15 * 15 + i * 15) % 360;
+            float frac = (a - deg) / 15f * step + w / 2f;
+            if (a % 45 == 0) {
+                c.drawLine(frac, cy + 6, frac, cy + 14, pStroke);
+                String lbl;
+                if (a == 0) lbl = "С";
+                else if (a == 90) lbl = "В";
+                else if (a == 180) lbl = "Ю";
+                else if (a == 270) lbl = "З";
+                else lbl = String.valueOf(a);
+                c.drawText(lbl, frac, cy + 2, pText);
+            } else {
+                c.drawLine(frac, cy + 9, frac, cy + 14, pStroke);
             }
         }
-        return input.onTouchEvent(event, player.camera, player, map);
+        pText.setTextAlign(Paint.Align.LEFT);
+        pFill.setColor(0xFFFFD740);
+        c.drawCircle(w / 2f, cy + 15, 2.4f, pFill);
     }
 
-    public boolean isShooting() {
-        return input.isFiring || input.isLeftFiring;
+    // =========================================================================
+    // Состояние: HP/броня/boost + оружие
+    // =========================================================================
+    private void renderStatus(Canvas c, int w, int h, PUBGPlayer player) {
+        float bx = w * 0.16f, bw = w * 0.24f, by = h * 0.935f;
+
+        pFill.setStyle(Paint.Style.FILL);
+        pFill.setColor(0x66000000);
+        c.drawRoundRect(bx - 4, by - 4, bx + bw + 4, by + 26, 6, 6, pFill);
+
+        // HP
+        pFill.setColor(player.health > 25 ? 0xFF66BB6A : 0xFFE53935);
+        c.drawRect(bx, by + 12, bx + bw * player.health / 100f, by + 20, pFill);
+        // Boost
+        pFill.setColor(0xFFFFD54F);
+        c.drawRect(bx, by + 4, bx + bw * player.boost / 100f, by + 10, pFill);
+        // Armor
+        pFill.setColor(0xFF4FC3F7);
+        float armor = Math.max(player.vestLevel, player.helmetLevel) / 3f;
+        c.drawRect(bx + bw * 0.75f, by - 0f, bx + bw * 0.75f + bw * 0.25f * armor, by + 3, pFill);
+
+        // Оружие и боезапас
+        Weapon wep = player.getActiveWeapon();
+        pText.setTextSize(15);
+        pText.setColor(0xDDFFFFFF);
+        if (wep != null) {
+            String ammo = wep.ammoInMag + " / " + wep.ammoReserve;
+            pText.setTextAlign(Paint.Align.LEFT);
+            c.drawText(wep.name, bx, by - 34, pText);
+            pText.setTextSize(20);
+            pText.setFakeBoldText(true);
+            c.drawText(ammo, bx + bw * 0.62f, by - 34, pText);
+            pText.setFakeBoldText(false);
+        }
+
+        // Живые/убийства — как в PUBG, под компасом справа
+        pText.setTextSize(15);
+        pText.setColor(0xE6FFFFFF);
+        pText.setTextAlign(Paint.Align.RIGHT);
+        c.drawText("ЖИВЫХ: " + game_alive, w - 16, h * 0.05f, pText);
+        c.drawText("УБИЙСТВ: " + player.kills, w - 16, h * 0.05f + 20, pText);
+        pText.setTextAlign(Paint.Align.LEFT);
+
+        // Слоты подписи
+        pText.setColor(0x99FFFFFF);
+        pText.setTextSize(11);
+        for (int s = 0; s < 3; s++) {
+            int role = MobileInputController.R_SLOT1 + s;
+            if (!input.visible[role]) continue;
+            Weapon ws = (s < player.weapons.length) ? player.weapons[s] : null;
+            if (ws != null) {
+                c.drawText(shortWeapon(ws), input.bx[role] - 24, input.by[role] - input.br[role] - 6, pText);
+            }
+        }
+    }
+
+    public int game_alive = 100; // синхронизируется игрой каждый кадр
+
+    private String shortWeapon(Weapon w) {
+        if (w == null) return "-";
+        return w.name;
+    }
+
+    // =========================================================================
+    // Рядом с лутом
+    // =========================================================================
+    private void renderNearbyLoot(Canvas c, int w, int h, PUBGPlayer player, PUBGMap map) {
+        ArrayList<LootItem> near = new ArrayList<>();
+        for (LootItem it : map.loot) {
+            if (it.isTaken) continue;
+            float d2 = Math3D.distSq(player.pos.x, player.pos.y, player.pos.z, it.x, it.y, it.z);
+            if (d2 < 14f * 14f) near.add(it);
+            if (near.size() >= 4) break;
+        }
+        if (near.isEmpty()) return;
+        float lx = w - 210, ly = h * 0.30f;
+        pFill.setStyle(Paint.Style.FILL);
+        pFill.setColor(0x800B141C);
+        c.drawRoundRect(lx - 8, ly - 24, lx + 200, ly + near.size() * 22 + 6, 6, 6, pFill);
+        pText.setColor(0xAAFFFFFF);
+        pText.setTextSize(12);
+        c.drawText("ПОДБОР", lx, ly - 8, pText);
+        for (int i = 0; i < near.size(); i++) {
+            LootItem it = near.get(i);
+            float d = (float) Math.sqrt(Math3D.distSq(player.pos.x, player.pos.y, player.pos.z, it.x, it.y, it.z));
+            pText.setColor(0xFFECEFF1);
+            pText.setTextSize(13);
+            c.drawText(it.name, lx, ly + i * 22 + 8, pText);
+            pText.setColor(0xFF90A4AE);
+            pText.setTextSize(11);
+            c.drawText(String.format(Locale.US, "%.0fm", d), lx + 168, ly + i * 22 + 8, pText);
+        }
+    }
+
+    // =========================================================================
+    private void renderKillFeed(Canvas c, PUBGGame game) {
+        float y = h_feedStart;
+        for (int i = 0; i < game.killFeed.length; i++) {
+            String s = game.killFeed[i];
+            if (s == null || game.killFeedT[i] <= 0) continue;
+            int a = (int) (255 * Math3D.clamp(game.killFeedT[i], 0f, 1f));
+            pText.setTextSize(14);
+            pText.setARGB(a, 255, 255, 255);
+            float tw = pText.measureText(s);
+            pFill.setStyle(Paint.Style.FILL);
+            pFill.setARGB(a / 2, 10, 14, 20);
+            c.drawRoundRect(16, y - 15, 16 + tw + 12, y + 4, 4, 4, pFill);
+            c.drawText(s, 22, y, pText);
+            y += 22;
+        }
+        pText.setAlpha(255);
+    }
+
+    private final float h_feedStart = 74f;
+
+    // =========================================================================
+    private void renderHealBar(Canvas c, int w, int h, PUBGPlayer player) {
+        if (player.healTimer <= 0) return;
+        float prog = 1f - player.healTimer / Math.max(0.001f, player.maxHealTimer);
+        float bw = 240, bx = w / 2f - bw / 2f, by = h * 0.78f;
+        pFill.setStyle(Paint.Style.FILL);
+        pFill.setColor(0x99000000);
+        c.drawRoundRect(bx - 6, by - 6, bx + bw + 6, by + 18, 6, 6, pFill);
+        pFill.setColor(0xFF66BB6A);
+        c.drawRect(bx, by, bx + bw * prog, by + 6, pFill);
+        pText.setColor(0xFFFFFFFF);
+        pText.setTextSize(12);
+        c.drawText("ЛЕЧЕНИЕ", bx + bw + 12, by + 8, pText);
+    }
+
+    // =========================================================================
+    // Вождение
+    // =========================================================================
+    private void renderDrivingHUD(Canvas c, int w, int h, PUBGPlayer player) {
+        Vehicle3D v = player.currentVehicle;
+        if (v == null) return;
+        float cx = w / 2f, by = h - 60;
+        pText.setTextAlign(Paint.Align.CENTER);
+        pText.setTextSize(34);
+        pText.setFakeBoldText(true);
+        pText.setColor(0xF2FFFFFF);
+        c.drawText(String.valueOf((int) Math.abs(v.speedKmH)), cx, by, pText);
+        pText.setFakeBoldText(false);
+        pText.setTextSize(12);
+        pText.setColor(0xAARRGGBB | 0xFF000000);
+        pText.setColor(0x99FFFFFF);
+        c.drawText("км/ч", cx, by + 16, pText);
+        // Топливо
+        pFill.setStyle(Paint.Style.FILL);
+        pFill.setColor(0x66000000);
+        c.drawRoundRect(cx - 70, by + 22, cx + 70, by + 32, 4, 4, pFill);
+        pFill.setColor(v.fuel > 25 ? 0xFFFFD54F : 0xFFE53935);
+        c.drawRect(cx - 68, by + 24, cx - 68 + 136 * v.fuel / 100f, by + 30, pFill);
+        // Режим D/R
+        pText.setTextSize(13);
+        pText.setColor(v.speedKmH < -1 ? 0xFFFF8A65 : 0xFFB9F6CA);
+        c.drawText(v.speedKmH < -1 ? "R" : "D", cx + 100, by, pText);
+        pText.setTextAlign(Paint.Align.LEFT);
+
+        pText.setColor(0xCCFFFFFF);
+        pText.setTextSize(13);
+        pText.setTextAlign(Paint.Align.CENTER);
+        c.drawText("СТИК = РУЛЬ · ГАЗ/ТОРМ справа", w / 2f, 30, pText);
+        pText.setTextAlign(Paint.Align.LEFT);
+    }
+
+    // =========================================================================
+    // Прыжок с парашютом
+    // =========================================================================
+    private void renderSkydiveHUD(Canvas c, int w, int h, PUBGPlayer player) {
+        float kmh = Math.abs(player.fallSpeed);
+        pText.setTextAlign(Paint.Align.CENTER);
+        pText.setTextSize(15);
+        pText.setColor(0xE6FFFFFF);
+        c.drawText(String.format(Locale.US, "ВЫСОТА %.0fm  ·  %.0f км/ч", player.altitude, kmh), w / 2f, 44, pText);
+
+        if (player.moveMode == PUBGPlayer.MODE_FREEFALL) {
+            pText.setColor(kmh > 200 ? 0xFFFF8A65 : 0xFF90CAF9);
+            c.drawText(kmh > 200 ? "СТОЕЧНЫЙ РЕЖИМ" : (kmh > 160 ? "ПРЫЖОК ВПЕРЕД" : "ПАДЕНИЕ"), w / 2f, 66, pText);
+            if (player.altitude > 70) {
+                pText.setColor(0xB3FFFFFF);
+                pText.setTextSize(13);
+                c.drawText("Расскроется автоматически на 50м", w / 2f, h * 0.92f, pText);
+            }
+        } else {
+            pText.setColor(0xFFA5D6A7);
+            c.drawText("ПАРАШЮТ ОТКРЫТ — управляй стиком", w / 2f, 66, pText);
+        }
+        pText.setTextAlign(Paint.Align.LEFT);
+    }
+
+    private void renderPlaneHUD(Canvas c, int w, int h, PUBGPlayer player) {
+        pFill.setStyle(Paint.Style.FILL);
+        pFill.setColor(0xCC0B141C);
+        rect.set(w / 2f - 170, h * 0.72f, w / 2f + 170, h * 0.72f + 74);
+        c.drawRoundRect(rect, 10, 10, pFill);
+        pStroke.setStyle(Paint.Style.STROKE);
+        pStroke.setStrokeWidth(2.5f);
+        pStroke.setColor(input.pressed[MobileInputController.R_CHUTE] ? 0xFFFFD740 : 0xFFFF7043);
+        c.drawRoundRect(rect, 10, 10, pStroke);
+        pText.setColor(0xFFFFFFFF);
+        pText.setTextSize(22);
+        pText.setFakeBoldText(true);
+        pText.setTextAlign(Paint.Align.CENTER);
+        c.drawText("НАЖМИ — ПРЫЖОК", w / 2f, h * 0.72f + 46, pText);
+        pText.setFakeBoldText(false);
+        pText.setTextSize(13);
+        pText.setColor(0xB3FFFFFF);
+        c.drawText("Свободный падение: управляй взглядом", w / 2f, h * 0.72f + 66, pText);
+        pText.setTextAlign(Paint.Align.LEFT);
     }
 }

@@ -263,9 +263,10 @@ public final class Weapon {
         }
     }
 
-    public int getTexture() {
-        if (skin == SKIN_GOLD) return GLUtil.texWeaponGold;
-        if (skin == SKIN_DRAGON) return GLUtil.texWeaponDragon;
-        return GLUtil.texWeaponDark;
+    /** Индекс материала TextureForge (скины оружия — собственные процедурные материалы) */
+    public int getMaterial() {
+        if (skin == SKIN_GOLD) return TextureForge.MAT_GOLD;
+        if (skin == SKIN_DRAGON) return TextureForge.MAT_DRAGON;
+        return TextureForge.MAT_GUN;
     }
 }

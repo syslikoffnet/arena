@@ -31,6 +31,13 @@ public final class CharacterMotor {
     public boolean isAiming = false;
     public boolean isMoving = false;
 
+    // Анимация: фаза шага для рендера ног/рук + флаг звука шага
+    public float walkPhase = 0f;
+    public float walkBlend = 0f;      // 0..1 величина отклонения стика
+    public boolean footstepPending = false;
+    private float lastStepSign = 0f;
+    public float horizontalSpeed = 0f;
+
     // Высоты и радиус коллизии
     public static final float RADIUS = 0.38f;
     public static final float HEIGHT_STAND = 1.80f;
@@ -65,18 +72,22 @@ public final class CharacterMotor {
         this.isAiming = aimInput;
         this.isSprinting = sprintInput && !aimInput && currentStance == STANCE_STAND && moveZ > 0.4f;
 
+        // 0. Смешение скорости от радиуса джойстика (PUBG-style): лёгкое нажатие = шаг
+        float stickMag = Math3D.clamp((float) Math.sqrt(moveX * moveX + moveZ * moveZ), 0f, 1f);
+        this.walkBlend = Math3D.smoothstep(0.08f, 0.92f, stickMag);
+
         // 1. Определение целевой высоты капсулы
         float targetHeight = (currentStance == STANCE_PRONE) ? HEIGHT_PRONE :
                 ((currentStance == STANCE_CROUCH) ? HEIGHT_CROUCH : HEIGHT_STAND);
         currentHeight = Math3D.lerp(currentHeight, targetHeight, dt * 12f);
 
-        // 2. Расчет базовой скорости
+        // 2. Расчет базовой скорости (с подмешиванием шага от силы нажатия стика)
         float baseSpeed;
         if (currentStance == STANCE_PRONE) baseSpeed = SPEED_PRONE;
         else if (currentStance == STANCE_CROUCH) baseSpeed = SPEED_CROUCH;
         else if (isSprinting) baseSpeed = SPEED_SPRINT;
         else if (isAiming) baseSpeed = SPEED_WALK * 0.75f;
-        else baseSpeed = SPEED_RUN;
+        else baseSpeed = Math3D.lerp(SPEED_WALK, SPEED_RUN, walkBlend);
 
         // 3. Расчет мирового направления движения относительно КАМЕРЫ (camYaw)
         float radCam = camYaw * Math3D.TO_RAD;
@@ -126,5 +137,17 @@ public final class CharacterMotor {
 
         // 8. Разрешение коллизий со стенами и домами (World Collider)
         WorldCollider.resolveCharacterCollision(position, RADIUS, currentHeight, map);
+
+        // 9. Фаза шага + событие звука шага (каждый полупериод)
+        horizontalSpeed = (float) Math.sqrt(velocity.x * velocity.x + velocity.z * velocity.z);
+        if (isGrounded && horizontalSpeed > 0.35f) {
+            float prev = walkPhase;
+            walkPhase += horizontalSpeed * dt * 1.55f;
+            float prevSign = (float) Math.sin(prev);
+            float curSign = (float) Math.sin(walkPhase);
+            if (prevSign * curSign < 0f) footstepPending = true;
+        } else if (walkPhase != 0f && !isGrounded) {
+            // в прыжке ноги фиксированы — фазу не крутим
+        }
     }
 }

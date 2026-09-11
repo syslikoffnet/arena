@@ -42,6 +42,12 @@ public final class PUBGLobbyUI {
     public int graphicsQuality = 2;
     public int gyroMode = PUBGGyroscope.MODE_ALWAYS_ON;
 
+    // Настройки управления (применяются к MobileInputController каждый кадр)
+    public float camSens = 0.30f;      // градусов/пиксель
+    public float gyroSens = 1.8f;      // множитель гироскопа
+    public float buttonScale = 1.0f;   // размер кнопок 0.8..1.2
+    public boolean invertY = false;
+
     private final Paint pFill = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint pStroke = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint pText = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -412,6 +418,36 @@ public final class PUBGLobbyUI {
         }
     }
 
+    /** Строка настройки −/значение/+ (36-пиксельные кнопки по бокам) */
+    private void drawStepper(Canvas c, float x, float y, String label, float value, float kind) {
+        pText.setColor(0xAAFFFFFF);
+        pText.setTextSize(12);
+        c.drawText(label, x + 44, y + 13, pText);
+
+        pFill.setStyle(Paint.Style.FILL);
+        pFill.setColor(0xFF37474F);
+        rect.set(x, y + 20, x + 30, y + 50);
+        c.drawRoundRect(rect, 5, 5, pFill);
+        rect.set(x + 250, y + 20, x + 280, y + 50);
+        c.drawRoundRect(rect, 5, 5, pFill);
+
+        pFill.setColor(0xFF263238);
+        rect.set(x + 38, y + 20, x + 242, y + 50);
+        c.drawRoundRect(rect, 5, 5, pFill);
+
+        pText.setColor(0xFFFFFFFF);
+        pText.setTextSize(16);
+        pText.setTextAlign(Paint.Align.CENTER);
+        String val;
+        if (kind == 2f) val = (int) ((value - 0.8f) / 0.1f + 0.5f) + "/4";
+        else val = String.format(java.util.Locale.US, "%.2f", value);
+        c.drawText(val, x + 140, y + 41, pText);
+        pText.setColor(0xFFFFB300);
+        c.drawText("−", x + 15, y + 41, pText);
+        c.drawText("+", x + 265, y + 41, pText);
+        pText.setTextAlign(Paint.Align.LEFT);
+    }
+
     private void drawToggle(Canvas c, float x, float y, float w, float h, String text, boolean active) {
         pFill.setStyle(Paint.Style.FILL);
         pFill.setColor(active ? 0xEEFFB300 : 0x66162230);
@@ -517,6 +553,14 @@ public final class PUBGLobbyUI {
         c.drawText("AUDIO & 3D SPATIAL SOUND:", dx + 30, dy + 260, pText);
         drawToggle(c, dx + 30, dy + 275, 140, 38, "ENABLED (ВКЛ)", SoundSynth3D.enabled);
         drawToggle(c, dx + 180, dy + 275, 140, 38, "MUTED (ВЫКЛ)", !SoundSynth3D.enabled);
+
+        // 4. Управление: чувствительность (шаговые кнопки −/+), размер кнопок, инверсия оси Y
+        pText.setColor(0xFF80D8FF);
+        c.drawText("CONTROLS (УПРАВЛЕНИЕ):", dx + 30, dy + 345, pText);
+        drawStepper(c, dx + 30, dy + 360, "CAMERA SENS", camSens, 0.0);
+        drawStepper(c, dx + 330, dy + 360, "GYRO SENS", gyroSens, 1.0);
+        drawStepper(c, dx + 630, dy + 360, "BTN SIZE", buttonScale, 2.0);
+        drawToggle(c, dx + 30, dy + 405, 190, 36, "INVERT Y", invertY);
 
         // Закрыть
         pFill.setColor(0xFFFFB300);
@@ -661,6 +705,18 @@ public final class PUBGLobbyUI {
                 // Звук
                 if (x >= dx + 30 && x <= dx + 170 && y >= dy + 275 && y <= dy + 313) SoundSynth3D.enabled = true;
                 else if (x >= dx + 180 && x <= dx + 320 && y >= dy + 275 && y <= dy + 313) SoundSynth3D.enabled = false;
+
+                // Управление: степперы чувствительности
+                if (y >= dy + 380 && y <= dy + 410) {
+                    float s1 = dx + 30, s2 = dx + 330, s3 = dx + 630;
+                    if (x >= s1 && x <= s1 + 30) camSens = Math.max(0.10f, camSens - 0.05f);
+                    else if (x >= s1 + 250 && x <= s1 + 280) camSens = Math.min(0.60f, camSens + 0.05f);
+                    else if (x >= s2 && x <= s2 + 30) gyroSens = Math.max(0.4f, gyroSens - 0.2f);
+                    else if (x >= s2 + 250 && x <= s2 + 280) gyroSens = Math.min(4.0f, gyroSens + 0.2f);
+                    else if (x >= s3 && x <= s3 + 30) buttonScale = Math.max(0.8f, buttonScale - 0.1f);
+                    else if (x >= s3 + 250 && x <= s3 + 280) buttonScale = Math.min(1.2f, buttonScale + 0.1f);
+                }
+                if (x >= dx + 30 && x <= dx + 220 && y >= dy + 405 && y <= dy + 441) invertY = !invertY;
 
                 if (x >= dx + dw - 160 && x <= dx + dw - 30 && y >= dy + dh - 55 && y <= dy + dh - 15) {
                     currentModal = MODAL_NONE;

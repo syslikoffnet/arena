@@ -58,6 +58,24 @@ public final class ModelGenerator {
             return this;
         }
 
+        /** Квад с произвольными UV по каждой вершине (небо) */
+        public Builder addQuadSky(float x0, float y0, float z0,
+                                  float x1, float y1, float z1,
+                                  float x2, float y2, float z2,
+                                  float x3, float y3, float z3,
+                                  float u0, float v0, float u1, float v1,
+                                  float u2, float v2, float u3, float v3) {
+            short base = vOffset;
+            addVert(x0, y0, z0, 0, 1, 0, u0, v0);
+            addVert(x1, y1, z1, 0, 1, 0, u1, v1);
+            addVert(x2, y2, z2, 0, 1, 0, u2, v2);
+            addVert(x3, y3, z3, 0, 1, 0, u3, v3);
+            iList.add(base); iList.add((short) (base + 1)); iList.add((short) (base + 2));
+            iList.add(base); iList.add((short) (base + 2)); iList.add((short) (base + 3));
+            vOffset += 4;
+            return this;
+        }
+
         public Builder addCylinder(float cx, float cy, float cz, float radius, float height, int seg, boolean vertical) {
             float hh = height / 2f;
             float step = (float) (Math.PI * 2 / seg);
@@ -172,6 +190,22 @@ public final class ModelGenerator {
     public static Mesh firstAidMesh;
     public static Mesh energyDrinkMesh;
 
+    // Пропа, анимация конечностей, мир (новая детальность)
+    public static Mesh trunkMesh;
+    public static Mesh canopyMesh;
+    public static Mesh bushMesh;
+    public static Mesh rockMesh;
+    public static Mesh barrelMesh;
+    public static Mesh crateMesh;
+    public static Mesh windowFrameMesh;
+    public static Mesh windowGlassMesh;
+    public static Mesh sandbagMesh;
+    public static Mesh watchtowerMesh;
+    public static Mesh soldierLegPivotMesh;   // пивот в тазобедренном суставе (y=0)
+    public static Mesh soldierArmPivotMesh;   // пивот в плече (y=0)
+    public static Mesh shadowQuadMesh;        // горизонтальный квад 1x1 для blob-тени
+    public static Mesh skyDomeMesh;           // купол неба (equirect UV)
+
     // Совместимость с Weapon.java
     public static Mesh akrMesh;
     public static Mesh m4Mesh;
@@ -225,6 +259,251 @@ public final class ModelGenerator {
         rpgMesh = new Builder().addCylinder(0, 0, 0, 0.08f, 0.85f, 10, false).build();
         knifeMesh = panMesh;
         grenadeMesh = new Builder().addBox(0, 0, 0, 0.10f, 0.14f, 0.10f, 1, 1).build();
+
+        // 5. Пропа и детали мира
+        trunkMesh = new Builder().addCylinder(0, 3.5f, 0, 0.40f, 7.0f, 8, true).build();
+        canopyMesh = buildCanopy();
+        bushMesh = buildBush();
+        rockMesh = buildRock();
+        barrelMesh = buildBarrel();
+        crateMesh = buildCrateProp();
+        windowFrameMesh = buildWindowFrame();
+        windowGlassMesh = new Builder().addQuad(-0.72f, -0.62f, 0, 0.72f, -0.62f, 0, 0.72f, 0.62f, 0, -0.72f, 0.62f, 0, 0, 0, 1, 1, 1).build();
+        sandbagMesh = buildSandbagWall();
+        watchtowerMesh = buildWatchtower();
+        soldierLegPivotMesh = buildLegPivot();
+        soldierArmPivotMesh = buildArmPivot();
+        shadowQuadMesh = new Builder().addQuad(-0.5f, 0, 0.5f, 0.5f, 0, 0.5f, 0.5f, 0, -0.5f, -0.5f, 0, -0.5f, 0, 1, 0, 1, 1).build();
+        skyDomeMesh = buildSkyDome();
+    }
+
+    // ------------------------------------------------------------- Новые пропа
+
+    private static Mesh buildCanopy() {
+        Builder b = new Builder();
+        b.addBox(0, 6.3f, 0, 6.6f, 2.7f, 6.6f, 1, 1);
+        b.addBox(0, 8.0f, 0.2f, 4.8f, 2.2f, 4.8f, 1, 1);
+        b.addBox(0, 9.4f, -0.1f, 2.8f, 1.9f, 2.8f, 1, 1);
+        return b.build();
+    }
+
+    private static Mesh buildBush() {
+        Builder b = new Builder();
+        b.addBox(0, 0.42f, 0, 1.5f, 0.85f, 1.5f, 1, 1);
+        b.addBox(0.5f, 0.75f, 0.25f, 0.9f, 0.65f, 0.9f, 1, 1);
+        b.addBox(-0.45f, 0.7f, -0.3f, 0.8f, 0.6f, 0.8f, 1, 1);
+        return b.build();
+    }
+
+    private static Mesh buildRock() {
+        Builder b = new Builder();
+        b.addHemisphere(0, -0.05f, 0, 1f, 3, 7);
+        b.addBox(0.25f, 0.25f, 0.15f, 1.15f, 0.6f, 0.95f, 1, 1);
+        return b.build();
+    }
+
+    private static Mesh buildBarrel() {
+        Builder b = new Builder();
+        b.addCylinder(0, 0.45f, 0, 0.32f, 0.9f, 12, true);
+        b.addCylinder(0, 0.18f, 0, 0.34f, 0.07f, 12, true);
+        b.addCylinder(0, 0.72f, 0, 0.34f, 0.07f, 12, true);
+        return b.build();
+    }
+
+    private static Mesh buildCrateProp() {
+        return new Builder().addBox(0, 0.45f, 0, 0.95f, 0.9f, 0.95f, 1, 1).build();
+    }
+
+    private static Mesh buildWindowFrame() {
+        Builder b = new Builder();
+        b.addBox(0, 0.75f, 0, 1.9f, 0.14f, 0.22f, 1, 1);  // верхняя перекладина
+        b.addBox(0, -0.75f, 0, 1.9f, 0.14f, 0.22f, 1, 1); // подоконник
+        b.addBox(-0.88f, 0, 0, 0.14f, 1.5f, 0.22f, 1, 1);
+        b.addBox(0.88f, 0, 0, 0.14f, 1.5f, 0.22f, 1, 1);
+        b.addBox(0, 0, 0, 0.07f, 1.5f, 0.18f, 1, 1);      // импост
+        return b.build();
+    }
+
+    private static Mesh buildSandbagWall() {
+        Builder b = new Builder();
+        for (int row = 0; row < 3; row++) {
+            float off = (row & 1) == 0 ? 0f : 0.45f;
+            for (int i = -2; i <= 2; i++) {
+                float x = i * 0.9f + off;
+                if (Math.abs(x) > 2.2f) continue;
+                b.addBox(x, 0.20f + row * 0.38f, (i * 31 + row * 7) % 5 * 0.02f, 0.86f, 0.36f, 0.46f, 1, 1);
+            }
+        }
+        return b.build();
+    }
+
+    private static Mesh buildWatchtower() {
+        Builder b = new Builder();
+        float h = 9f;
+        b.addBox(-1.4f, h / 2f, -1.4f, 0.3f, h, 0.3f, 1, 1);
+        b.addBox(1.4f, h / 2f, -1.4f, 0.3f, h, 0.3f, 1, 1);
+        b.addBox(-1.4f, h / 2f, 1.4f, 0.3f, h, 0.3f, 1, 1);
+        b.addBox(1.4f, h / 2f, 1.4f, 0.3f, h, 0.3f, 1, 1);
+        b.addBox(0, h - 0.6f, 0, 1.6f, 0.24f, 4.0f, 1, 1);   // лестничный марш упрощённый
+        b.addBox(0, h + 0.35f, 0, 4.2f, 0.7f, 4.2f, 1, 1);   // площадка
+        b.addBox(0, h + 0.95f, 0, 3.6f, 0.5f, 3.6f, 1, 1);   // будка
+        b.addPrismRoof(0, h + 1.2f, 0, 4.6f, 1.1f, 4.6f);
+        return b.build();
+    }
+
+    /** Нога: пивот в бедре (0,0,0), свисает вниз до земли (~ -0.86) */
+    private static Mesh buildLegPivot() {
+        Builder b = new Builder();
+        b.addBox(0, -0.19f, 0, 0.23f, 0.40f, 0.23f, 1, 1);      // бедро
+        b.addBox(0.115f, -0.16f, 0, 0.045f, 0.17f, 0.17f, 1, 1); // карман cargo
+        b.addBox(0, -0.46f, 0.10f, 0.17f, 0.15f, 0.07f, 1, 1);   // наколенник
+        b.addBox(0, -0.62f, 0, 0.21f, 0.18f, 0.23f, 1, 1);      // голенище ботинка
+        b.addBox(0, -0.79f, 0.05f, 0.22f, 0.12f, 0.31f, 1, 1);  // носок
+        b.addBox(0, -0.855f, 0.06f, 0.24f, 0.05f, 0.34f, 1, 1); // подошва
+        return b.build();
+    }
+
+    /** Рука: пивот в плече (0,0,0), свисает вниз (~ -0.80) */
+    private static Mesh buildArmPivot() {
+        Builder b = new Builder();
+        b.addBox(0, -0.21f, 0, 0.16f, 0.44f, 0.16f, 1, 1);  // плечо
+        b.addBox(0, -0.53f, 0, 0.14f, 0.28f, 0.14f, 1, 1);  // предплечье
+        b.addBox(0, -0.72f, 0.02f, 0.15f, 0.13f, 0.17f, 1, 1); // перчатка
+        return b.build();
+    }
+
+    // =========================================================================
+    // Террейн: общая сетка высот (разделённые вершины, лимит short-индексов учтён)
+    // =========================================================================
+
+    /** Сетка высот n x n на [-half..half]^2, y = map.getTerrainHeight, нормали из градиента */
+    public static Mesh buildTerrain(PUBGMap map, int n, float half) {
+        int vc = n * n;
+        float[] verts = new float[vc * 3];
+        float[] norms = new float[vc * 3];
+        float[] uvs = new float[vc * 2];
+        float step = half * 2f / (n - 1);
+
+        for (int iz = 0; iz < n; iz++) {
+            float z = -half + iz * step;
+            for (int ix = 0; ix < n; ix++) {
+                float x = -half + ix * step;
+                int i = iz * n + ix;
+                float y = map.getTerrainHeight(x, z);
+                verts[i * 3] = x; verts[i * 3 + 1] = y; verts[i * 3 + 2] = z;
+                float hl = map.getTerrainHeight(x - 1.5f, z);
+                float hr = map.getTerrainHeight(x + 1.5f, z);
+                float hd = map.getTerrainHeight(x, z - 1.5f);
+                float hu = map.getTerrainHeight(x, z + 1.5f);
+                float nx = hl - hr, ny = 3.0f, nz = hd - hu;
+                float len = (float) Math.sqrt(nx * nx + ny * ny + nz * nz);
+                norms[i * 3] = nx / len; norms[i * 3 + 1] = ny / len; norms[i * 3 + 2] = nz / len;
+                uvs[i * 2] = x * 0.25f; uvs[i * 2 + 1] = z * 0.25f;
+            }
+        }
+
+        int qc = (n - 1) * (n - 1);
+        short[] idx = new short[qc * 6];
+        int p = 0;
+        for (int iz = 0; iz < n - 1; iz++) {
+            for (int ix = 0; ix < n - 1; ix++) {
+                short a = (short) (iz * n + ix);
+                short b = (short) (iz * n + ix + 1);
+                short c = (short) ((iz + 1) * n + ix + 1);
+                short d = (short) ((iz + 1) * n + ix);
+                idx[p++] = a; idx[p++] = c; idx[p++] = b;
+                idx[p++] = a; idx[p++] = d; idx[p++] = c;
+            }
+        }
+        return new Mesh(verts, norms, uvs, idx);
+    }
+
+    /**
+     * Дороги: лента вдоль каждого сегмента map.roads {x0,z0,x1,z1,width},
+     * повторяет рельеф (шаг 2.5 м), поднята на +0.06 над землёй.
+     */
+    public static Mesh buildRoads(PUBGMap map) {
+        java.util.ArrayList<float[]> segLists = new ArrayList<>();
+        int totalVerts = 0;
+        for (float[] rd : map.roads) {
+            float x0 = rd[0], z0 = rd[1], x1 = rd[2], z1 = rd[3], w = rd[4];
+            float len = Math3D.dist(x0, 0, z0, x1, 0, z1);
+            int steps = Math.max(1, (int) (len / 2.5f));
+            int verts = (steps + 1) * 2;
+            totalVerts += verts;
+            segLists.add(new float[]{x0, z0, x1, z1, w, steps, verts});
+        }
+        if (segLists.isEmpty() || totalVerts == 0) {
+            return new Mesh(new float[]{0, 0, 0, 0, 0, 0, 0, 0, 0}, new float[]{0, 1, 0, 0, 1, 0, 0, 1, 0},
+                    new float[]{0, 0, 0, 0, 0, 0}, new short[]{0, 1, 2});
+        }
+
+        float[] verts = new float[totalVerts * 3];
+        float[] norms = new float[totalVerts * 3];
+        float[] uvs = new float[totalVerts * 2];
+        short[] idx = new short[(totalVerts / 2 - segLists.size()) * 6];
+
+        int vi = 0, ip = 0;
+        for (float[] s : segLists) {
+            float x0 = s[0], z0 = s[1], x1 = s[2], z1 = s[3], w = s[4];
+            int steps = (int) s[5];
+            int startVert = vi / 2; // индекс первой вершины пары
+            float dx = (x1 - x0) / steps, dz = (z1 - z0) / steps;
+            float lenH = (float) Math.sqrt(dx * dx + dz * dz) + 0.0001f;
+            float px = -dz / lenH * (w / 2f), pz = dx / lenH * (w / 2f);
+
+            for (int i = 0; i <= steps; i++) {
+                float cx = x0 + dx * i, cz = z0 + dz * i;
+                for (int side = 0; side < 2; side++) {
+                    float ex = cx + (side == 0 ? px : -px);
+                    float ez = cz + (side == 0 ? pz : -pz);
+                    int v = vi++;
+                    float y = map.getTerrainHeight(ex, ez) + 0.07f;
+                    verts[v * 3] = ex; verts[v * 3 + 1] = y; verts[v * 3 + 2] = ez;
+                    norms[v * 3] = 0; norms[v * 3 + 1] = 1f; norms[v * 3 + 2] = 0;
+                    uvs[v * 2] = 0; uvs[v * 2 + 1] = (float) Math.sqrt((ex - x0) * (ex - x0) + (ez - z0) * (ez - z0)) * 0.25f;
+                }
+            }
+            for (int i = 0; i < steps; i++) {
+                short a = (short) (startVert + i * 2);
+                short b = (short) (a + 1);
+                short c = (short) (a + 3);
+                short d = (short) (a + 2);
+                idx[ip++] = a; idx[ip++] = c; idx[ip++] = b;
+                idx[ip++] = a; idx[ip++] = d; idx[ip++] = c;
+            }
+        }
+        return new Mesh(verts, norms, uvs, java.util.Arrays.copyOf(idx, ip));
+    }
+
+    private static Mesh buildSkyDome() {
+        // Верхняя полусфера, UV: u=азимут/2π, v=высота (1 у горизонта → 0 в зените)
+        int rings = 9, segs = 28;
+        float radius = 460f;
+        Builder b = new Builder();
+        for (int r = 0; r < rings; r++) {
+            float phi0 = (float) (r * Math.PI / 2 / rings);
+            float phi1 = (float) ((r + 1) * Math.PI / 2 / rings);
+            float y0 = (float) Math.sin(phi0) * radius;
+            float y1 = (float) Math.sin(phi1) * radius;
+            float r0 = (float) Math.cos(phi0) * radius;
+            float r1 = (float) Math.cos(phi1) * radius;
+            float v0 = 1f - phi0 / ((float) Math.PI / 2f);
+            float v1 = 1f - phi1 / ((float) Math.PI / 2f);
+            for (int s = 0; s < segs; s++) {
+                float t0 = (float) (s * Math.PI * 2 / segs);
+                float t1 = (float) ((s + 1) * Math.PI * 2 / segs);
+                float u0 = t0 / ((float) Math.PI * 2f);
+                float u1 = t1 / ((float) Math.PI * 2f);
+                float x00 = (float) Math.cos(t0) * r0, z00 = (float) Math.sin(t0) * r0;
+                float x10 = (float) Math.cos(t1) * r0, z10 = (float) Math.sin(t1) * r0;
+                float x11 = (float) Math.cos(t1) * r1, z11 = (float) Math.sin(t1) * r1;
+                float x01 = (float) Math.cos(t0) * r1, z01 = (float) Math.sin(t0) * r1;
+                b.addQuadSky(x00, y0, z00, x10, y0, z10, x11, y1, z11, x01, y1, z01,
+                        u0, v0, u1, v0, u1, v1, u0, v1);
+            }
+        }
+        return b.build();
     }
 
     // ------------------------------------------------------------- 3D Персонаж

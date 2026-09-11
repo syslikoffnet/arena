@@ -191,6 +191,12 @@ public final class PUBGBot {
         }
     }
 
+    // Атрибуция убийства для килл-фида
+    public boolean lastHitByPlayer = false;
+    public Weapon lastHitWeapon = null;
+    public boolean announced = false;
+    public boolean killedByPlayer = false;
+
     public void takeDamage(float dmg, Object attacker, PUBGPlayer player) {
         if (isDead) return;
 
@@ -200,9 +206,10 @@ public final class PUBGBot {
         if (health <= 0) {
             health = 0;
             isDead = true;
-            if (attacker == player || attacker == null) {
+            killedByPlayer = (attacker == player) || lastHitByPlayer;
+            if (killedByPlayer) {
                 player.kills++;
-                SoundSynth3D.play2D(SoundSynth3D.SOUND_VICTORY, 0.5f);
+                SoundSynth3D.play2D(SoundSynth3D.SOUND_KILL, 0.7f);
             }
         }
     }

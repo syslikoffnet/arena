@@ -121,6 +121,27 @@ public final class ParticleSystem {
     public final Math3D.Vec3 muzzleFlashPos = new Math3D.Vec3();
     public float muzzleFlashIntensity = 0f;
 
+    /** Потребляемое событие взрыва (гранаты): игра снимает урон по площади */
+    public static final class ExplosionEvent {
+        public float x, y, z, damage, radius;
+        public int ownerId;
+
+        void set(float x, float y, float z, float damage, float radius, int ownerId) {
+            this.x = x; this.y = y; this.z = z;
+            this.damage = damage; this.radius = radius; this.ownerId = ownerId;
+        }
+    }
+    private final ExplosionEvent pendingExplosion = new ExplosionEvent();
+    private boolean explosionPending = false;
+
+    public boolean consumeExplosion(ExplosionEvent out) {
+        if (!explosionPending) return false;
+        explosionPending = false;
+        out.x = pendingExplosion.x; out.y = pendingExplosion.y; out.z = pendingExplosion.z;
+        out.damage = pendingExplosion.damage; out.radius = pendingExplosion.radius; out.ownerId = pendingExplosion.ownerId;
+        return true;
+    }
+
     public void update(float dt, PUBGMap map) {
         if (muzzleFlashIntensity > 0) {
             muzzleFlashIntensity = Math.max(0, muzzleFlashIntensity - dt * 14f);
@@ -143,6 +164,9 @@ public final class ParticleSystem {
             if (!p.update(dt, map)) {
                 if (p.exploded) {
                     spawnExplosion(p.x, p.y, p.z);
+                    pendingExplosion.set(p.x, p.y, p.z, p.damage, p.radius, p.ownerId);
+                    explosionPending = true;
+                    SoundSynth3D.play2D(SoundSynth3D.SOUND_EXPLOSION, 0.9f);
                 }
                 projectiles.remove(i);
             }

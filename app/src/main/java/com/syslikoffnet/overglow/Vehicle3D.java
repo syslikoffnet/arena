@@ -23,6 +23,8 @@ public final class Vehicle3D {
     public float fuel = 100f;
     public float health = 800f;
     public boolean hasDriver = false;
+    public boolean destroyed = false;
+    private float prevSpeedMs = 0f;
 
     public float wheelSpin = 0f;
     public float engineSoundTimer = 0f;
@@ -80,6 +82,31 @@ public final class Vehicle3D {
 
         pos.x += vel.x * dt;
         pos.z += vel.z * dt;
+
+        // Следование рельефу + коллизия со стенами (упрощённый выталкивающий цилиндр)
+        if (map != null) {
+            float gy = map.getTerrainHeight(pos.x, pos.z) + 0.02f;
+            pos.y = Math3D.lerp(pos.y, gy, Math3D.clamp(dt * 12f, 0f, 1f));
+            WorldCollider.resolveCharacterCollision(pos, 1.35f, 1.4f, map);
+            float nowY = map.getTerrainHeight(pos.x, pos.z) + 0.02f;
+            if (pos.y < nowY) pos.y = nowY;
+        } else {
+            pos.y = 0f;
+        }
+
+        // Урон от резких столкновений
+        float impact = Math.abs(speedMS - prevSpeedMs) / Math.max(dt, 0.001f);
+        if (impact > 26f) {
+            health -= impact * 1.6f;
+            SoundSynth3D.playSound(SoundSynth3D.SOUND_EXPLOSION, pos.x, pos.y, pos.z,
+                    player.pos, player.yaw);
+            if (health <= 0 && !destroyed) {
+                destroyed = true;
+                health = 0;
+                hasDriver = false;
+            }
+        }
+        prevSpeedMs = speedMS;
 
         wheelSpin += speedMS * dt * 6f;
         updateCollider();

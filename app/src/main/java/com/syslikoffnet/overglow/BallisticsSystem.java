@@ -161,7 +161,11 @@ public final class BallisticsSystem {
                 if (hitBot != null) {
                     float finalDmg = HitboxSystem.calculateDamage(b.baseDamage, hitZone, b.travelDistance,
                             hitBot.helmetLevel, hitBot.vestLevel);
-                    hitBot.takeDamage(finalDmg, null, player);
+                    // Атрибуция: стрелок передан в снаряде (игрок или другой бот)
+                    hitBot.lastHitByPlayer = b.isPlayerShot;
+                    hitBot.lastHitWeapon = (b.isPlayerShot && b.shooterRef instanceof PUBGPlayer)
+                            ? ((PUBGPlayer) b.shooterRef).getActiveWeapon() : null;
+                    hitBot.takeDamage(finalDmg, b.isPlayerShot ? player : b.shooterRef, player);
 
                     float hx = segOrigin.x + segDir.x * closestBotHit;
                     float hy = segOrigin.y + segDir.y * closestBotHit;

@@ -18,6 +18,17 @@ public final class Math3D {
         return a + (b - a) * t;
     }
 
+    /** Плавный доворот угла по кратайшей дуге (градусы), t = 0..1 */
+    public static float lerpAngle(float a, float b, float t) {
+        float diff = ((b - a) % 360f + 540f) % 360f - 180f;
+        return a + diff * clamp(t, 0f, 1f);
+    }
+
+    public static float smoothstep(float e0, float e1, float x) {
+        float t = clamp((x - e0) / (e1 - e0), 0f, 1f);
+        return t * t * (3f - 2f * t);
+    }
+
     public static float distSq(float x1, float y1, float z1, float x2, float y2, float z2) {
         float dx = x1 - x2, dy = y1 - y2, dz = z1 - z2;
         return dx * dx + dy * dy + dz * dz;
@@ -80,6 +91,15 @@ public final class Math3D {
             this.y *= s;
             this.z *= s;
             return this;
+        }
+
+        /** Алиас умножения на скаляр (используется баллистикой) */
+        public Vec3 scale(float s) {
+            return mul(s);
+        }
+
+        public Vec3 scaled(float s, Vec3 out) {
+            return out.set(x * s, y * s, z * s);
         }
 
         public float lengthSq() {
@@ -246,7 +266,7 @@ public final class Math3D {
     // =========================================================================
     // 3D Axis-Aligned Bounding Box (AABB)
     // =========================================================================
-    public static final class Box {
+    public static class Box {
         public float minX, minY, minZ;
         public float maxX, maxY, maxZ;
 
@@ -297,6 +317,14 @@ public final class Math3D {
             if (tzmax < tmax) tmax = tzmax;
 
             return tmin > 0 ? tmin : (tmax > 0 ? tmax : -1f);
+        }
+    }
+
+    /** Алиас AABB, используемый хитбоксами и баллистикой */
+    public static final class AABB extends Box {
+        public AABB() { super(); }
+        public AABB(float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
+            super(minX, minY, minZ, maxX, maxY, maxZ);
         }
     }
 }
