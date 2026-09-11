@@ -96,8 +96,9 @@ public final class CharacterMotor {
 
         float forwardX = sinCam * moveZ;
         float forwardZ = cosCam * moveZ;
-        float strafeX = cosCam * moveX;
-        float strafeZ = -sinCam * moveX;
+        // Экранное право при camYaw: (−cos, 0, +sin) — стик вправо = шаг вправо
+        float strafeX = -cosCam * moveX;
+        float strafeZ = sinCam * moveX;
 
         float targetVelX = (forwardX + strafeX) * baseSpeed;
         float targetVelZ = (forwardZ + strafeZ) * baseSpeed;

@@ -184,8 +184,8 @@ public final class PUBGPlayer {
         float rad = camera.yaw * Math3D.TO_RAD;
         float forwardSpd = (camera.pitch > -35f) ? 42f : 18f;
 
-        float targetVelX = (float) Math.sin(rad) * (moveZ * forwardSpd + 20f) + (float) Math.cos(rad) * (moveX * 28f);
-        float targetVelZ = (float) Math.cos(rad) * (moveZ * forwardSpd + 20f) - (float) Math.sin(rad) * (moveX * 28f);
+        float targetVelX = (float) Math.sin(rad) * (moveZ * forwardSpd + 20f) - (float) Math.cos(rad) * (moveX * 28f);
+        float targetVelZ = (float) Math.cos(rad) * (moveZ * forwardSpd + 20f) + (float) Math.sin(rad) * (moveX * 28f);
 
         vel.x = Math3D.lerp(vel.x, targetVelX, dt * 5f);
         vel.z = Math3D.lerp(vel.z, targetVelZ, dt * 5f);
@@ -207,8 +207,8 @@ public final class PUBGPlayer {
         fallSpeed = 24f;
 
         float rad = camera.yaw * Math3D.TO_RAD;
-        float targetVelX = (float) Math.sin(rad) * (moveZ * 14f + 8f) + (float) Math.cos(rad) * (moveX * 14f);
-        float targetVelZ = (float) Math.cos(rad) * (moveZ * 14f + 8f) - (float) Math.sin(rad) * (moveX * 14f);
+        float targetVelX = (float) Math.sin(rad) * (moveZ * 14f + 8f) - (float) Math.cos(rad) * (moveX * 14f);
+        float targetVelZ = (float) Math.cos(rad) * (moveZ * 14f + 8f) + (float) Math.sin(rad) * (moveX * 14f);
 
         vel.x = Math3D.lerp(vel.x, targetVelX, dt * 8f);
         vel.z = Math3D.lerp(vel.z, targetVelZ, dt * 8f);

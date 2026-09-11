@@ -119,11 +119,11 @@ public final class PUBGRenderer {
         float ey = eye.y + (float) (Math.random() - 0.5) * Math.abs(shake) * 0.06f;
         float ez = eye.z + (float) (Math.random() - 0.5) * Math.abs(shake) * 0.06f;
 
-        // Roll от пик-наклона + покачивание
+        // Roll от пик-наклона: up = worldUp·cos + right·sin (right = экранное «вправо»)
         float roll = player.leanAngle * 7f * Math3D.TO_RAD;
-        float upx = (float) Math.sin(roll), upy = (float) Math.cos(roll);
-
-        Math3D.Vec3 upV = new Math3D.Vec3(upx, upy, 0);
+        float sr = (float) Math.sin(roll), cr = (float) Math.cos(roll);
+        Math3D.Vec3 rt = player.camera.right;
+        Math3D.Vec3 upV = new Math3D.Vec3(rt.x * sr, cr, rt.z * sr);
         Math3D.Mat4 projTmp = new Math3D.Mat4();
         Math3D.Mat4 viewTmp = new Math3D.Mat4();
 

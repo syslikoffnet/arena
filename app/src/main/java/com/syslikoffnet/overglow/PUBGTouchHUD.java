@@ -510,7 +510,10 @@ public final class PUBGTouchHUD {
         pText.setColor(0x99FFFFFF);
         pText.setTextSize(12);
         pText.setTextAlign(Paint.Align.CENTER);
-        int deg = (int) ((yaw % 360) + 360) % 360;
+        // Курс = 180° − yaw: в мировом контуре north = −Z (верх миникарты), поворот вправо
+        // соответствует убыванию yaw.
+        float hdg = ((180f - yaw) % 360f + 360f) % 360f;
+        int deg = (int) hdg;
         for (int i = -6; i <= 6; i++) {
             int a = (deg / 15 * 15 + i * 15) % 360;
             float frac = (a - deg) / 15f * step + w / 2f;

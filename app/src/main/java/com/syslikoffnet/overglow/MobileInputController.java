@@ -319,7 +319,9 @@ public final class MobileInputController {
             moveZ = ny;
         } else if (role == ROLE_LOOK && camera != null) {
             float sens = camSens * adsMul;
-            camera.yaw += dx * sens;
+            // Двиг вперёд = наклон вперёд: yaw+ по конвенции движка — это поворот ВЛЕВО,
+            // поэтому свайп вправо (dx>0) уменьшает yaw.
+            camera.yaw -= dx * sens;
             camera.pitch += (invertY ? dy : -dy) * sens * 0.9f;
             if (camera.pitch > 85f) camera.pitch = 85f;
             if (camera.pitch < -85f) camera.pitch = -85f;

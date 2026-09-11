@@ -77,8 +77,8 @@ public final class Vehicle3D {
         // Перемещение
         float speedMS = speedKmH / 3.6f;
         float rad = yaw * Math3D.TO_RAD;
-        vel.x = -(float) Math.sin(rad) * speedMS;
-        vel.z = (float) Math.cos(rad) * speedMS;
+            vel.x = (float) Math.sin(rad) * speedMS;
+            vel.z = (float) Math.cos(rad) * speedMS;
 
         pos.x += vel.x * dt;
         pos.z += vel.z * dt;

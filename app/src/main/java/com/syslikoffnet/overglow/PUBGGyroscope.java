@@ -71,11 +71,11 @@ public final class PUBGGyroscope implements SensorEventListener {
             }
             lastTimestamp = event.timestamp;
 
-            // В альбомной ориентации (Landscape):
-            // event.values[0] (ось X) = наклон телефона вверх/вниз (Pitch)
-            // event.values[1] (ось Y) = поворот влево/вправо (Yaw)
-            float rawPitch = event.values[0];
-            float rawYaw = event.values[1];
+            // В альбомной ориентации (ROTATION_90): ось X телефона = вертикаль экрана,
+            // ось Y = горизонталь. Поворот телефона вправо = +ω вокруг X (yaw должен
+            // уменьшаться — в движке yaw+ это поворот влево). Наклон носа вверх = +ω вокруг Y.
+            float rawYaw = event.values[0];
+            float rawPitch = event.values[1];
 
             // Мертвая зона против микро-дрожания
             if (Math.abs(rawPitch) < 0.015f) rawPitch = 0;
@@ -83,8 +83,8 @@ public final class PUBGGyroscope implements SensorEventListener {
 
             float degScale = 57.29578f * dt * sensitivity;
 
-            gyroPitchDelta += (invertY ? rawPitch : -rawPitch) * degScale;
-            gyroYawDelta += -rawYaw * degScale;
+            gyroPitchDelta += (invertY ? -rawPitch : rawPitch) * degScale;
+            gyroYawDelta -= rawYaw * degScale;
         }
     }
 
@@ -92,7 +92,7 @@ public final class PUBGGyroscope implements SensorEventListener {
     public void onAccuracyChanged(Sensor sensor, int accuracy) {}
 
     public void applyToPlayer(PUBGPlayer player) {
-        if (mode == MODE_OFF || player == null) {
+        if (mode == MODE_OFF || player == null || player.camera == null) {
             gyroPitchDelta = 0;
             gyroYawDelta = 0;
             return;
@@ -104,14 +104,18 @@ public final class PUBGGyroscope implements SensorEventListener {
             return;
         }
 
-        player.pitch += gyroPitchDelta;
-        player.yaw += gyroYawDelta;
-        player.pitch = Math3D.clamp(player.pitch, -85f, 85f);
-
-        player.camera.pitch = player.pitch;
-        player.camera.yaw = player.yaw;
-
+        float dy = gyroYawDelta;
+        float dp = gyroPitchDelta;
         gyroPitchDelta = 0;
         gyroYawDelta = 0;
+        if (dy == 0f && dp == 0f) return;
+
+        // Дельты применяются к камере (она — источник истины для yaw/pitch).
+        // НИКОГДА не переписывать камеру старыми значениями player.* — иначе
+        // гасится каждый ввод с тач-обзора.
+        player.camera.yaw += dy;
+        player.camera.pitch = Math3D.clamp(player.camera.pitch + dp, -85f, 85f);
+        player.yaw = player.camera.yaw;
+        player.pitch = player.camera.pitch;
     }
 }

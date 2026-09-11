@@ -81,9 +81,10 @@ public final class SpringArmCamera {
         forward.y = sinPitch;
         forward.z = cosYaw * cosPitch;
 
-        right.x = cosYaw;
+        // Экранное «право» = normalize(up × (eye-target)) при lookAt: (−cosYaw, 0, +sinYaw)
+        right.x = -cosYaw;
         right.y = 0;
-        right.z = -sinYaw;
+        right.z = sinYaw;
 
         // 5. Желаемая позиция камеры с учетом плечевого и наклона смещений
         float actualArmLength = currentArmLength;
