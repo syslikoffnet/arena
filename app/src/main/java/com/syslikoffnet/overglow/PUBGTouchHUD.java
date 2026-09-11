@@ -676,7 +676,6 @@ public final class PUBGTouchHUD {
         c.drawText(String.valueOf((int) Math.abs(v.speedKmH)), cx, by, pText);
         pText.setFakeBoldText(false);
         pText.setTextSize(12);
-        pText.setColor(0xAARRGGBB | 0xFF000000);
         pText.setColor(0x99FFFFFF);
         c.drawText("км/ч", cx, by + 16, pText);
         // Топливо
