@@ -240,7 +240,7 @@ public final class PUBGMap {
         for (int x = -100; x <= 100; x += 100) {
             float y = getTerrainHeight(x, -180);
             buildHangar(x, y, -180, concrete, metal, corr);
-            lootId = buildBaseLoot(x, y, lootId, rnd);
+            lootId = buildBaseLoot(x, y, -180, lootId, rnd);
         }
 
         // Вышка контроля полётов (декорация, коллизию дают только ножки-блоки по углам — проходимая)
@@ -412,7 +412,7 @@ public final class PUBGMap {
         addWall(hx, hy + 0.03f, hz, w, 0.06f, d, concrete);
     }
 
-    private int buildBaseLoot(float hx, float hy, int lootId, Random rnd) {
+    private int buildBaseLoot(float hx, float hy, float hz, int lootId, Random rnd) {
         for (int i = 0; i < 3; i++) {
             float x = hx + (i - 1) * 6;
             int wep = rnd.nextInt(4);

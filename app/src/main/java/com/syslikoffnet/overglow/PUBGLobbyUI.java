@@ -557,9 +557,9 @@ public final class PUBGLobbyUI {
         // 4. Управление: чувствительность (шаговые кнопки −/+), размер кнопок, инверсия оси Y
         pText.setColor(0xFF80D8FF);
         c.drawText("CONTROLS (УПРАВЛЕНИЕ):", dx + 30, dy + 345, pText);
-        drawStepper(c, dx + 30, dy + 360, "CAMERA SENS", camSens, 0.0);
-        drawStepper(c, dx + 330, dy + 360, "GYRO SENS", gyroSens, 1.0);
-        drawStepper(c, dx + 630, dy + 360, "BTN SIZE", buttonScale, 2.0);
+        drawStepper(c, dx + 30, dy + 360, "CAMERA SENS", camSens, 0f);
+        drawStepper(c, dx + 330, dy + 360, "GYRO SENS", gyroSens, 1f);
+        drawStepper(c, dx + 630, dy + 360, "BTN SIZE", buttonScale, 2f);
         drawToggle(c, dx + 30, dy + 405, 190, 36, "INVERT Y", invertY);
 
         // Закрыть

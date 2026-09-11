@@ -148,13 +148,13 @@ public final class Weapon {
     }
 
     public void attach(WeaponAttachment att) {
-        if (att != null && att.slot >= 0 && att.slot < TOTAL_SLOTS) {
+        if (att != null && att.slot >= 0 && att.slot < WeaponAttachment.TOTAL_SLOTS) {
             attachments[att.slot] = att;
         }
     }
 
     public void detach(int slot) {
-        if (slot >= 0 && slot < TOTAL_SLOTS) {
+        if (slot >= 0 && slot < WeaponAttachment.TOTAL_SLOTS) {
             attachments[slot] = null;
         }
     }
